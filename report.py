@@ -201,3 +201,65 @@ def export_rows(conn, rules, t0, t1):
                time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(e["t1"])),
                round(e["d"]), e["app"], e["cat"], e["browser"] or "", e["site_name"] or "",
                "" if e["browser"] else e["detail"], e["page"]]
+
+
+def summarize(events, rules=None):
+    total = sum(e["d"] for e in events)
+    cats = {c: 0.0 for c in CATEGORIES}
+    apps, sites = {}, {}
+    for e in events:
+        cats[e["cat"]] += e["d"]
+        a = apps.setdefault(e["app"], {"name": e["app"], "exe": e["exe"], "secs": 0.0, "browser": bool(e["browser"]),
+                                       "cats": {}, "details": {}, "detail_cat": {}, "pages": defaultdict(dict)})
+        a["secs"] += e["d"]
+        _add(a["cats"], e["cat"], e["d"])
+        _add(a["details"], e["detail"], e["d"])
+        a["detail_cat"][e["detail"]] = e["cat"]
+        if e["page"] and e["page"] != e["detail"]:
+            _add(a["pages"][e["detail"]], e["page"], e["d"])
+        if e["browser"]:
+            sk = e["site"] or ""
+            s = sites.setdefault(sk, {"key": e["site"], "name": e["site_name"], "secs": 0.0, "cats": {},
+                                      "browsers": {}, "pages": {}})
+            s["secs"] += e["d"]
+            _add(s["cats"], e["cat"], e["d"])
+            _add(s["browsers"], e["browser"], e["d"])
+            if e["page"] and e["page"] != e["site_name"]:
+                _add(s["pages"], e["page"], e["d"])
+
+    app_list = []
+    for a in sorted(apps.values(), key=lambda x: -x["secs"]):
+        details = []
+        for name, secs in sorted(a["details"].items(), key=lambda kv: -kv[1])[:12]:
+            details.append({"name": name, "secs": round(secs), "cat": a["detail_cat"][name],
+                            "pages": _top(a["pages"].get(name, {}), 5) if a["browser"] else []})
+        app_list.append({
+            "name": a["name"], "exe": a["exe"], "secs": round(a["secs"]), "browser": a["browser"],
+            "cat": max(a["cats"].items(), key=lambda kv: kv[1])[0], "cats": {k: round(v) for k, v in a["cats"].items()},
+            "details": details,
+        })
+    site_list = []
+    for s in sorted(sites.values(), key=lambda x: -x["secs"]):
+        site_list.append({
+            "key": s["key"], "name": s["name"], "secs": round(s["secs"]),
+            # the site's own category (what the dropdown changes); title rules may still split its time
+            "cat": (rules.site_category(s["key"]) if rules and s["key"] else None)
+                   or max(s["cats"].items(), key=lambda kv: kv[1])[0],
+            "cats": {k: round(v) for k, v in s["cats"].items()},
+            "browsers": _top(s["browsers"], 6), "pages": _top(s["pages"], 6),
+        })
+
+    switches = sum(1 for a, b in zip(events, events[1:]) if a["app"] != b["app"])
+    longest, _ = longest_streak(events)
+    return {
+        "total": round(total),
+        "categories": {k: round(v) for k, v in cats.items()},
+        "focus": round(sum(cats[c] for c in PRODUCTIVE)),
+        "distraction": round(sum(cats[c] for c in DISTRACTING)),
+        "longest_focus": round(longest),
+        "switches": switches,
+        "first": events[0]["t0"] if events else None,
+        "last": events[-1]["t1"] if events else None,
+        "apps": app_list,
+        "sites": site_list,
+    }
