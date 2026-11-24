@@ -42,3 +42,30 @@ def _write_json(path, data):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     os.replace(tmp, path)
+
+
+class Limits:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.items = _read_json(LIMITS_PATH, [])
+
+    def all(self):
+        with self._lock:
+            return [dict(x) for x in self.items]
+
+    def set(self, kind, key, label, minutes):
+        if kind not in KINDS:
+            raise ValueError("kind must be one of " + ", ".join(KINDS))
+        if kind == "goal":
+            key, label = "focus", "Focus"
+        if kind == "category" and key not in CATEGORIES:
+            raise ValueError("unknown category")
+        if not key:
+            raise ValueError("pick what to limit")
+        key = str(key).lower() if kind in ("site", "app") else key
+        with self._lock:
+            self.items = [x for x in self.items if not (x["kind"] == kind and x["key"] == key)]
+            if minutes and float(minutes) > 0:
+                self.items.append({"id": uuid.uuid4().hex[:8], "kind": kind, "key": key,
+                                   "label": (label or key)[:60], "minutes": int(float(minutes))})
+            _write_json(LIMITS_PATH, self.items)
