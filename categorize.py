@@ -191,3 +191,24 @@ class Rules:
             return True
         key = self.site_key(host)
         return bool(key and key in self.passive_sites)
+
+    def is_exempt(self, exe, host, url, title, cat):
+        """Meetings and online assessments: never ask 'Still there?' and keep counting."""
+        if exe in self.exempt_apps:
+            return True
+        if host and any(host == s or host.endswith("." + s) for s in self.exempt_sites):
+            return True
+        u = (url or "").lower()
+        if u and any(p in u for p in self.exempt_urls):
+            return True
+        # title words only count on real pages, not videos or feeds (an "exam tips" video is still a video)
+        if (title and self.exempt_title and cat not in ("Entertainment", "Social")
+                and not self.is_passive(exe, host) and self.exempt_title.search(title)):
+            return True
+        return False
+
+    def idle_check(self):
+        c = self.cfg.get("idle_check", {}) or {}
+        return {"enabled": bool(c.get("enabled", True)),
+                "answer": 60 * float(c.get("answer_within_minutes", 2)),
+                "confirm": 60 * float(c.get("after_confirm_minutes", 15))}
