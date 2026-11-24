@@ -171,3 +171,54 @@ def _windows_theme():
             return "light" if winreg.QueryValueEx(k, "AppsUseLightTheme")[0] else "dark"
     except OSError:
         return "light"
+
+
+# ---- icon drawn in code: a heartbeat line on a disc -------------------------
+_BEAT = [(0.12, 0.54), (0.34, 0.54), (0.43, 0.30), (0.55, 0.76), (0.64, 0.44), (0.70, 0.54), (0.88, 0.54)]
+
+
+def _seg_dist(px, py, ax, ay, bx, by):
+    dx, dy = bx - ax, by - ay
+    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+    return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
+def _render(size, bg, fg):
+    ss = 3
+    half_w = 0.052 if size <= 20 else 0.042
+    rows = []
+    for y in range(size - 1, -1, -1):            # BMP rows run bottom-up
+        row = bytearray()
+        for x in range(size):
+            disc = line = 0
+            for sy in range(ss):
+                for sx in range(ss):
+                    u, v = (x + (sx + .5) / ss) / size, (y + (sy + .5) / ss) / size
+                    if math.hypot(u - .5, v - .5) <= .48:
+                        disc += 1
+                        if min(_seg_dist(u, v, *_BEAT[i], *_BEAT[i + 1]) for i in range(len(_BEAT) - 1)) <= half_w:
+                            line += 1
+            n = ss * ss
+            a, l = disc / n, (line / disc if disc else 0)
+            r, g, b = (round(bg[i] * (1 - l) + fg[i] * l) for i in range(3))
+            row += bytes((b, g, r, round(a * 255)))
+        rows.append(bytes(row))
+    return b"".join(rows)
+
+
+def make_icon(path, bg, fg=(255, 255, 255), sizes=(16, 20, 24, 32, 48)):
+    images = [(s, _render(s, bg, fg)) for s in sizes]
+    header = struct.pack("<HHH", 0, 1, len(images))
+    entries, blobs, offset = b"", b"", 6 + 16 * len(images)
+    for s, px in images:
+        bih = struct.pack("<IiiHHIIiiII", 40, s, s * 2, 1, 32, 0, 0, 0, 0, 0, 0)
+        data = bih + px + b"\x00" * (((s + 31) // 32) * 4 * s)
+        entries += struct.pack("<BBBBHHII", s, s, 0, 0, 1, 32, len(data), offset)
+        blobs += data
+        offset += len(data)
+    with open(path, "wb") as f:
+        f.write(header + entries + blobs)
+
+
+def _open(url):
+    threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
