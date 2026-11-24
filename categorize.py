@@ -212,3 +212,36 @@ class Rules:
         return {"enabled": bool(c.get("enabled", True)),
                 "answer": 60 * float(c.get("answer_within_minutes", 2)),
                 "confirm": 60 * float(c.get("after_confirm_minutes", 15))}
+
+    # ---- categories -----------------------------------------------------
+    def _site_category(self, key, host):
+        if not key:
+            return None
+        if key in self.overrides["sites"]:
+            return self.overrides["sites"][key]
+        if key in self.site_cat:
+            return self.site_cat[key]
+        h = host or key
+        for k, cat in self.site_cat.items():
+            if h.endswith("." + k):
+                return cat
+        for suf, cat in self.suffix_cat:
+            if h.endswith(suf):
+                return cat
+        for word, cat in self.contains_cat:
+            if word in h:
+                return cat
+        return None
+
+    def site_category(self, key):
+        return self._site_category(key, key) or "Other"
+
+    def classify(self, exe, site_key, host, title):
+        for sites, apps, pat, cat in self.title_rules:
+            if ((site_key and site_key in sites) or exe in apps) and title and pat.search(title):
+                return cat
+        if site_key:
+            return self._site_category(site_key, host) or "Other"
+        if exe in self.overrides["apps"]:
+            return self.overrides["apps"][exe]
+        return self.app_cat.get(exe, "Other")
