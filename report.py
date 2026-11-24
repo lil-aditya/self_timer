@@ -311,3 +311,29 @@ def day_report(conn, rules, d):
         label = "vs the day before"
     out["compare"] = {"label": label, "secs": round(sum(e["d"] for e in load_events(conn, pstart, cut, rules)))}
     return out
+
+
+def week_report(conn, rules, d):
+    first = d - timedelta(days=6)
+    start = midnight(first)
+    end = midnight(d + timedelta(days=1))
+    events = load_events(conn, start, end, rules)
+    out = summarize(events, rules)
+    days = []
+    for i in range(7):
+        di = first + timedelta(days=i)
+        a, b = midnight(di), midnight(di + timedelta(days=1))
+        cats = {}
+        for e in events:
+            if e["t1"] > a and e["t0"] < b:
+                _add(cats, e["cat"], min(e["t1"], b) - max(e["t0"], a))
+        days.append({"date": di.isoformat(), "total": round(sum(cats.values())),
+                     "cats": {k: round(v) for k, v in cats.items()}})
+    active_days = [x for x in days if x["total"] > 0]
+    out.update(view="week", date=d.isoformat(), start=start, end=end, days=days,
+               daily_avg=round(out["total"] / len(active_days)) if active_days else 0)
+    pstart = midnight(first - timedelta(days=7))
+    prev_events = load_events(conn, pstart, start, rules)
+    out["compare"] = {"label": "vs the 7 days before", "secs": round(sum(e["d"] for e in prev_events))}
+    out["insights"], out["category_compare"] = week_insights(events, prev_events, days)
+    return out
