@@ -294,3 +294,94 @@ class Tracker(threading.Thread):
         }
 
     # ---- loop -------------------------------------------------------------
+    def run(self):
+        if HAVE_UIA:
+            try:
+                auto.SetGlobalSearchTimeout(1)
+            except Exception:
+                pass
+            with auto.UIAutomationInitializerInThread(debug=False):
+                self._loop()
+        else:
+            log.warning("uiautomation not installed: browser sites will be guessed from page titles")
+            self._loop()
+
+    def _loop(self):
+        conn = sqlite3.connect(self.db_path, timeout=10)
+        conn.execute("PRAGMA journal_mode=WAL")
+        cur = None          # the activity being recorded right now
+        last_flush = 0.0
+        last_tick = time.time()
+
+        def write_end(c):
+            conn.execute("UPDATE events SET t1=? WHERE id=?", (c["t1"], c["id"]))
+            conn.commit()
+
+        def close(c):
+            if c:
+                write_end(c)
+            return None
+
+        while not self.stop_event.is_set():
+            started = time.time()
+            now = started
+            status = "tracking"
+            try:
+                if cur and now - last_tick > self.MAX_GAP:
+                    cur = close(cur)            # the laptop slept; don't count the gap
+                if self.paused:
+                    status = "paused"
+                    cur = close(cur)
+                    snap = None
+                else:
+                    snap = self.snapshot()
+                if snap == "locked" or (snap is None and not self.paused):
+                    status = "locked" if snap == "locked" else "away"
+                    cur = close(cur)
+                    snap = None
+                if not snap and self._asking:
+                    self._end_prompt()
+                if snap:
+                    idle = idle_seconds()
+                    action, status, stop_at, resume_at = self._idle_policy(snap, idle, now)
+                    if action in ("stop", "split") and cur:
+                        cur["t1"] = max(cur["t0"], min(cur["t1"], stop_at))
+                        cur = close(cur)
+                    if action in ("count", "split"):
+                        start = resume_at if action == "split" else now
+                        key = (snap["exe"], snap["title"], snap["url"])
+                        if cur and cur["key"] == key:
+                            cur["t1"] = now
+                        else:
+                            if cur:
+                                cur["t1"] = now
+                                close(cur)
+                            c = conn.execute(
+                                "INSERT INTO events(t0,t1,exe,app,title,url,host,browser) VALUES(?,?,?,?,?,?,?,?)",
+                                (start, now, snap["exe"], snap["app"], snap["title"], snap["url"], snap["host"], snap["browser"]))
+                            conn.commit()
+                            cur = {"id": c.lastrowid, "key": key, "t0": start, "t1": now}
+                            last_flush = now
+                        if now - last_flush >= self.FLUSH_EVERY:
+                            write_end(cur)
+                            last_flush = now
+                with self._state_lock:
+                    self._state = {
+                        "status": status,
+                        "since": cur["t0"] if cur else None,
+                        "exe": snap["exe"] if snap else None,
+                        "app": snap["app"] if snap else None,
+                        "title": snap["title"] if snap else None,
+                        "host": snap["host"] if snap else None,
+                        "browser": snap["browser"] if snap else None,
+                        "updated": now,
+                    }
+            except sqlite3.Error:
+                log.exception("database error")
+                time.sleep(2)
+            except Exception:
+                log.exception("tracker tick failed")
+            last_tick = now
+            self.stop_event.wait(max(0.05, self.interval - (time.time() - started)))
+        close(cur)
+        conn.close()
