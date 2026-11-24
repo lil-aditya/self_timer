@@ -242,3 +242,32 @@ class Tracker(threading.Thread):
 
     def stop(self):
         self.stop_event.set()
+
+    # ---- browser URL -------------------------------------------------------
+    def browser_url(self, hwnd, title):
+        if not (HAVE_UIA and self.rules.get("read_browser_urls", True)):
+            return None
+        key = (int(hwnd), title)
+        now = time.time()
+        hit = self._url_cache.get(key)
+        if hit and now - hit[1] < (20 if hit[0] else 3):
+            return hit[0]
+        url = None
+        try:
+            win = auto.ControlFromHandle(hwnd)
+            edit = win.EditControl(searchDepth=14)
+            if edit.Exists(maxSearchSeconds=0.4, searchIntervalSeconds=0.05):
+                val = edit.GetValuePattern().Value
+                if val and parse_host(val):
+                    url = val.strip()[:500]
+        except Exception as e:  # window closed mid-read, access denied, etc.
+            log.debug("url read failed: %s", e)
+        if url is None and hit and hit[0]:
+            url = hit[0]      # e.g. you're typing in the address bar; keep the page you were on
+        self._url_cache[key] = (url, now)
+        self._url_cache.move_to_end(key)
+        while len(self._url_cache) > 300:
+            self._url_cache.popitem(last=False)
+        return url
+
+    # ---- one look at the screen ------------------------------------------
