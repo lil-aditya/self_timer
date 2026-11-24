@@ -222,3 +222,88 @@ def make_icon(path, bg, fg=(255, 255, 255), sizes=(16, 20, 24, 32, 48)):
 
 def _open(url):
     threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
+
+
+class Tray(threading.Thread):
+    """menu_status() -> str shown greyed at the top of the menu.
+    on_pause_toggle() flips pause; is_paused() reports it; on_quit() stops Pulse."""
+
+    WM_TRAY = WM_APP + 1
+    WM_PROMPT_SHOW = WM_APP + 3
+    WM_PROMPT_HIDE = WM_APP + 4
+    CMD_OPEN, CMD_PAUSE, CMD_WEEK, CMD_QUIT = 1, 2, 3, 9
+    on_idle_answer = None       # set by pulse.py: receives "here" or "away"
+
+    def __init__(self, url, icon_dir, menu_status, is_paused, on_pause_toggle, on_quit):
+        super().__init__(name="tray", daemon=True)
+        self.url, self.icon_dir = url, icon_dir
+        self.menu_status, self.is_paused = menu_status, is_paused
+        self.on_pause_toggle, self.on_quit = on_pause_toggle, on_quit
+        self.hwnd = None
+        self.ready = threading.Event()
+        self._tip = "Pulse"
+        self._icon_name = "active"
+        self._balloon_url = None
+        self._lock = threading.Lock()
+
+    # ---- thread ----------------------------------------------------------------
+    def run(self):
+        try:
+            self._run()
+        except Exception:
+            log.exception("tray failed")
+            self.ready.set()
+
+    def _run(self):
+        try:   # crisp text on high-DPI screens
+            user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+        except Exception:
+            pass
+        self.prompt_hwnd = None
+        self._prompt_info = None
+        self._hover = -1
+        os.makedirs(self.icon_dir, exist_ok=True)
+        paths = {"active": os.path.join(self.icon_dir, "pulse.ico"),
+                 "paused": os.path.join(self.icon_dir, "pulse-paused.ico")}
+        if not os.path.exists(paths["active"]):
+            make_icon(paths["active"], (42, 120, 214))
+        if not os.path.exists(paths["paused"]):
+            make_icon(paths["paused"], (143, 141, 134))
+        cx, cy = user32.GetSystemMetrics(SM_CXSMICON), user32.GetSystemMetrics(SM_CYSMICON)
+        self.icons = {k: user32.LoadImageW(None, p, IMAGE_ICON, cx, cy, LR_LOADFROMFILE) for k, p in paths.items()}
+        self.large_icon = user32.LoadImageW(None, paths["active"], IMAGE_ICON, 48, 48, LR_LOADFROMFILE)
+
+        hinst = kernel32.GetModuleHandleW(None)
+        self._proc_ref = WNDPROC(self._proc)
+        wc = WNDCLASSEXW()
+        wc.cbSize = ctypes.sizeof(WNDCLASSEXW)
+        wc.lpfnWndProc = self._proc_ref
+        wc.hInstance = hinst
+        wc.lpszClassName = "PulseTrayWindow"
+        user32.RegisterClassExW(ctypes.byref(wc))
+        self.hwnd = user32.CreateWindowExW(0, "PulseTrayWindow", "Pulse", 0, 0, 0, 0, 0, None, None, hinst, None)
+        self.WM_TASKBAR = user32.RegisterWindowMessageW("TaskbarCreated")
+        self._shell(NIM_ADD, NIF_MESSAGE | NIF_ICON | NIF_TIP)
+        self.ready.set()
+        msg = wt.MSG()
+        while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+            user32.TranslateMessage(ctypes.byref(msg))
+            user32.DispatchMessageW(ctypes.byref(msg))
+        user32.UnregisterClassW("PulseTrayWindow", hinst)
+
+    def _nid(self, flags):
+        nid = NOTIFYICONDATAW()
+        nid.cbSize = ctypes.sizeof(NOTIFYICONDATAW)
+        nid.hWnd = self.hwnd
+        nid.uID = 1
+        nid.uFlags = flags
+        nid.uCallbackMessage = self.WM_TRAY
+        nid.hIcon = self.icons.get(self._icon_name)
+        nid.szTip = self._tip[:127]
+        return nid
+
+    def _shell(self, op, flags, nid=None):
+        if not self.hwnd:
+            return False
+        with self._lock:
+            return bool(shell32.Shell_NotifyIconW(op, ctypes.byref(nid or self._nid(flags))))
