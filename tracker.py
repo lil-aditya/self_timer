@@ -57,3 +57,50 @@ def idle_seconds():
     if not user32.GetLastInputInfo(ctypes.byref(lii)):
         return 0.0
     return ((kernel32.GetTickCount() - lii.dwTime) & 0xFFFFFFFF) / 1000.0
+
+
+def window_title(hwnd):
+    n = user32.GetWindowTextLengthW(hwnd)
+    if n <= 0:
+        return ""
+    buf = ctypes.create_unicode_buffer(n + 1)
+    user32.GetWindowTextW(hwnd, buf, n + 1)
+    return buf.value
+
+
+def window_pid(hwnd):
+    pid = wt.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    return pid.value
+
+
+def process_path(pid):
+    h = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not h:
+        return None
+    try:
+        size = wt.DWORD(1024)
+        buf = ctypes.create_unicode_buffer(1024)
+        if kernel32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+            return buf.value
+    finally:
+        kernel32.CloseHandle(h)
+    return None
+
+
+def uwp_child_pid(hwnd, host_pid):
+    """Store apps live inside ApplicationFrameHost; the real app is a child window."""
+    found = []
+
+    def cb(child, _):
+        pid = window_pid(child)
+        if pid != host_pid:
+            found.append(pid)
+            return False
+        return True
+
+    user32.EnumChildWindows(hwnd, EnumChildProc(cb), 0)
+    return found[0] if found else None
+
+
+_desc_cache = {}
