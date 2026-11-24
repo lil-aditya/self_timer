@@ -141,3 +141,33 @@ def friendly_name(exe, path):
     if desc and len(desc) <= 40:
         return desc
     return os.path.splitext(exe)[0].replace("_", " ").title()
+
+
+class Tracker(threading.Thread):
+    FLUSH_EVERY = 5       # seconds between writes of the open activity's end time
+    MAX_GAP = 15          # a pause longer than this (sleep, hibernate) splits the activity
+
+    def __init__(self, db_path, rules, interval=1.0):
+        super().__init__(name="tracker", daemon=True)
+        self.db_path, self.rules, self.interval = db_path, rules, interval
+        self.stop_event = threading.Event()
+        self.paused = False
+        self._state_lock = threading.Lock()
+        self._state = {"status": "starting"}
+        self._url_cache = OrderedDict()
+        # "Still there?" check
+        self.prompt = None          # the tray, once it exists: ask_idle(), hide_idle(), can_prompt()
+        self._asking = None         # {"last_input", "deadline", "resumed_at"} while the card is showing
+        self._answer = None         # "here" / "away", set from the tray thread
+        self._latched = None        # last-input time after "away" or no answer: don't count until new input
+        self._confirmed_key = None  # the activity you said "I'm here" to: asked less often while it lasts
+
+    # ---- public --------------------------------------------------------
+    def state(self):
+        with self._state_lock:
+            return dict(self._state)
+
+    def answer(self, ans):
+        """Called by the tray when you press a button on the 'Still there?' card."""
+        if ans in ("here", "away"):
+            self._answer = ans
