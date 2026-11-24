@@ -375,3 +375,72 @@ class Tray(threading.Thread):
             self.set_icon("paused" if self.is_paused() else "active")
         elif cmd == self.CMD_QUIT:
             threading.Thread(target=self.on_quit, daemon=True).start()
+
+    # ---- "Still there?" card (runs on the tray thread) ------------------------------
+    def _create_prompt(self):
+        hinst = kernel32.GetModuleHandleW(None)
+        self._prompt_proc_ref = WNDPROC(self._prompt_proc)
+        wc = WNDCLASSEXW()
+        wc.cbSize = ctypes.sizeof(WNDCLASSEXW)
+        wc.style = CS_DROPSHADOW
+        wc.lpfnWndProc = self._prompt_proc_ref
+        wc.hInstance = hinst
+        wc.hCursor = user32.LoadCursorW(None, ctypes.c_void_p(IDC_ARROW))
+        wc.lpszClassName = "PulseStillThere"
+        user32.RegisterClassExW(ctypes.byref(wc))
+        self.prompt_hwnd = user32.CreateWindowExW(
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, "PulseStillThere", "Pulse: still there?",
+            WS_POPUP, 0, 0, 10, 10, None, None, hinst, None)
+        try:   # keep it out of screen shares, recordings and proctoring captures
+            user32.SetWindowDisplayAffinity(self.prompt_hwnd, WDA_EXCLUDEFROMCAPTURE)
+        except Exception:
+            pass
+        if dwmapi:
+            pref = ctypes.c_int(2)  # rounded corners on Windows 11
+            dwmapi.DwmSetWindowAttribute(self.prompt_hwnd, 33, ctypes.byref(pref), 4)
+
+    def _show_prompt(self):
+        info = self._prompt_info
+        if not info:
+            return
+        if not self.prompt_hwnd:
+            self._create_prompt()
+        try:
+            dpi = user32.GetDpiForSystem()
+        except Exception:
+            dpi = 96
+        s = dpi / 96.0
+        self._scale = s
+        self._theme = THEMES[_windows_theme()]
+        if dwmapi:
+            border = wt.DWORD(self._theme["border"])
+            dwmapi.DwmSetWindowAttribute(self.prompt_hwnd, 34, ctypes.byref(border), 4)
+        if not getattr(self, "_fonts", None) or self._fonts[0] != s:
+            mk = lambda px, weight: gdi32.CreateFontW(-round(px * s), 0, 0, 0, weight, 0, 0, 0, 1, 0, 0, 5, 0, "Segoe UI")
+            self._fonts = (s, mk(19, 600), mk(14.5, 400), mk(13, 400), mk(14, 600))
+        W, H = round(380 * s), round(178 * s)
+        P, bh, by = round(18 * s), round(36 * s), round(126 * s)
+        split = round(204 * s)
+        self._btns = [("I'm here, keep counting", (P, by, split, by + bh)),
+                      ("I was away", (split + round(10 * s), by, W - P, by + bh))]
+        self._hover = -1
+        wa = wt.RECT()
+        user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(wa), 0)
+        x, y = wa.right - W - round(16 * s), wa.bottom - H - round(16 * s)
+        user32.SetWindowPos(self.prompt_hwnd, HWND_TOPMOST, x, y, W, H, SWP_NOACTIVATE | SWP_SHOWWINDOW)
+        user32.SetTimer(self.prompt_hwnd, 1, 1000, None)
+        user32.InvalidateRect(self.prompt_hwnd, None, True)
+
+    def _hide_prompt(self):
+        if self.prompt_hwnd:
+            user32.KillTimer(self.prompt_hwnd, 1)
+            user32.ShowWindow(self.prompt_hwnd, SW_HIDE)
+        self._prompt_info = None
+
+    def _hit(self, lparam):
+        x = ctypes.c_short(lparam & 0xFFFF).value
+        y = ctypes.c_short((lparam >> 16) & 0xFFFF).value
+        for i, (_, (l, t, r, b)) in enumerate(getattr(self, "_btns", [])):
+            if l <= x < r and t <= y < b:
+                return i
+        return -1
