@@ -444,3 +444,88 @@ class Tray(threading.Thread):
             if l <= x < r and t <= y < b:
                 return i
         return -1
+
+    def _prompt_proc(self, hwnd, msg, wparam, lparam):
+        try:
+            if msg == WM_MOUSEACTIVATE:
+                return MA_NOACTIVATE           # clicking the card never takes focus from your test or editor
+            if msg == WM_ERASEBKGND:
+                return 1
+            if msg == WM_PAINT:
+                self._paint_prompt(hwnd)
+                return 0
+            if msg == WM_TIMER:
+                user32.InvalidateRect(hwnd, None, False)
+                return 0
+            if msg == WM_MOUSEMOVE:
+                h = self._hit(lparam)
+                if h != self._hover:
+                    self._hover = h
+                    user32.InvalidateRect(hwnd, None, False)
+                tme = TRACKMOUSEEVENT(ctypes.sizeof(TRACKMOUSEEVENT), TME_LEAVE, hwnd, 0)
+                user32.TrackMouseEvent(ctypes.byref(tme))
+                return 0
+            if msg == WM_MOUSELEAVE:
+                if self._hover != -1:
+                    self._hover = -1
+                    user32.InvalidateRect(hwnd, None, False)
+                return 0
+            if msg == WM_SETCURSOR and self._hover != -1:
+                user32.SetCursor(user32.LoadCursorW(None, ctypes.c_void_p(IDC_HAND)))
+                return 1
+            if msg == WM_LBUTTONUP_:
+                h = self._hit(lparam)
+                if h != -1:
+                    self._hide_prompt()
+                    if self.on_idle_answer:
+                        self.on_idle_answer("here" if h == 0 else "away")
+                return 0
+        except Exception:
+            log.exception("prompt message failed")
+        return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+    def _paint_prompt(self, hwnd):
+        ps = PAINTSTRUCT()
+        hdc = user32.BeginPaint(hwnd, ctypes.byref(ps))
+        try:
+            th, s = self._theme, self._scale
+            _, f_title, f_body, f_small, f_btn = self._fonts
+            rc = wt.RECT()
+            user32.GetClientRect(hwnd, ctypes.byref(rc))
+            bg = gdi32.CreateSolidBrush(th["bg"])
+            user32.FillRect(hdc, ctypes.byref(rc), bg)
+            gdi32.DeleteObject(bg)
+            gdi32.SetBkMode(hdc, 1)
+
+            def text(t, font, color, box, flags):
+                old = gdi32.SelectObject(hdc, font)
+                gdi32.SetTextColor(hdc, color)
+                r = wt.RECT(*box)
+                user32.DrawTextW(hdc, t, -1, ctypes.byref(r), flags | DT_NOPREFIX)
+                gdi32.SelectObject(hdc, old)
+
+            info = self._prompt_info or {"label": "", "idle": 0, "deadline": 0}
+            P, W = round(18 * s), rc.right
+            mins = max(1, round(info["idle"] / 60))
+            text("Still there?", f_title, th["ink"], (P, round(14 * s), W - P, round(42 * s)), DT_SINGLELINE)
+            text(f"No mouse or keyboard for {mins} min. Pulse is counting this as {info['label']}.",
+                 f_body, th["ink2"], (P, round(44 * s), W - P, round(88 * s)), DT_WORDBREAK | DT_END_ELLIPSIS)
+            import time as _t
+            left = max(0, int(info["deadline"] - _t.time()))
+            text(f"No answer in {left // 60}:{left % 60:02d} and those quiet minutes won't count.",
+                 f_small, th["muted"], (P, round(92 * s), W - P, round(114 * s)), DT_SINGLELINE | DT_END_ELLIPSIS)
+            rad = round(16 * s)
+            for i, (label, (l, t, r, b)) in enumerate(self._btns):
+                primary = i == 0
+                fill = th[("pri" if primary else "sec") + ("_hover" if self._hover == i else "")]
+                brush, pen = gdi32.CreateSolidBrush(fill), gdi32.CreatePen(0, 1, fill)
+                ob, op = gdi32.SelectObject(hdc, brush), gdi32.SelectObject(hdc, pen)
+                gdi32.RoundRect(hdc, l, t, r, b, rad, rad)
+                gdi32.SelectObject(hdc, ob)
+                gdi32.SelectObject(hdc, op)
+                gdi32.DeleteObject(brush)
+                gdi32.DeleteObject(pen)
+                text(label, f_btn, th["pri_ink"] if primary else th["ink"], (l, t, r, b),
+                     DT_CENTER | DT_VCENTER | DT_SINGLELINE)
+        finally:
+            user32.EndPaint(hwnd, ctypes.byref(ps))
