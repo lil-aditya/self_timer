@@ -1,0 +1,3 @@
+# Optional: reads the exact website address from Chrome, Edge, Brave and Firefox.
+# Without it, Pulse still works and guesses sites from page titles.
+uiautomation>=2.0
