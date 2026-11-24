@@ -75,3 +75,12 @@ TITLE_SITES = {
     "wikipedia": "wikipedia.org", "notion": "notion.so", "google drive": "drive.google.com",
     "perplexity": "perplexity.ai", "facebook": "facebook.com", "coursera": "coursera.org",
 }
+
+_SEP = re.compile(r"\s+[-–—|·]\s+")
+_BROWSER_SUFFIX = re.compile(
+    r"\s+[-–—]\s+(Google Chrome|Microsoft​?\s?Edge|Brave|Mozilla Firefox|Firefox|Opera|Vivaldi|Arc|Zen Browser|Thorium)"
+    r"(\s*\(Incognito\)|\s*\(InPrivate\))?\s*$", re.I)
+_EDGE_EXTRA = re.compile(r"\s+and \d+ more pages?$", re.I)
+_EDGE_PROFILE = re.compile(r"\s+[-–—]\s+(Personal|Work|Profile \d+|InPrivate)\s*$", re.I)
+_BADGE = re.compile(r"^\(\d+\+?\)\s*")
+_DIRTY = re.compile(r"^[●•*]\s*")
