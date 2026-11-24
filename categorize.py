@@ -245,3 +245,28 @@ class Rules:
         if exe in self.overrides["apps"]:
             return self.overrides["apps"][exe]
         return self.app_cat.get(exe, "Other")
+
+    # ---- the main entry point ---------------------------------------------
+    def enrich(self, exe, app, title, host, browser):
+        ck = (exe, title, host, browser)
+        hit = self._cache.get(ck)
+        if hit:
+            return hit
+        clean = clean_title(title or "", exe)
+        if browser:
+            key = self.site_key(host) if host else guess_site(clean)
+            name = self.site_name(key)
+            page = strip_site_suffix(clean, name) or name
+            cat = self.classify(exe, key, host or key, page)
+            out = {"cat": cat, "site": key, "site_name": name, "detail": name, "page": page}
+        else:
+            proj = project_name(exe, clean)
+            if not proj:
+                clean = strip_app_suffix(clean, exe, app)
+            detail = proj or clean or app
+            cat = self.classify(exe, None, None, clean)
+            out = {"cat": cat, "site": None, "site_name": None, "detail": detail, "page": clean}
+        if len(self._cache) > 20000:
+            self._cache.clear()
+        self._cache[ck] = out
+        return out
