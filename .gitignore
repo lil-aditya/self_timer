@@ -1,0 +1,12 @@
+# Your personal activity history, limits and logs: never commit these
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Editors and OS
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
