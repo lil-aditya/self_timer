@@ -270,3 +270,29 @@ class Rules:
             self._cache.clear()
         self._cache[ck] = out
         return out
+
+
+# ---- title helpers ---------------------------------------------------------
+def clean_title(title, exe=""):
+    t = _DIRTY.sub("", title.strip())
+    t = _BROWSER_SUFFIX.sub("", t)
+    if exe == "msedge.exe":
+        t = _EDGE_PROFILE.sub("", t)
+        t = _EDGE_EXTRA.sub("", t)
+    t = _BADGE.sub("", t)
+    return t.strip()
+
+
+def guess_site(title):
+    parts = [p.strip().lower() for p in _SEP.split(title) if p.strip()]
+    for p in reversed(parts):
+        if p in TITLE_SITES:
+            return TITLE_SITES[p]
+    return None
+
+
+def strip_site_suffix(title, site_name):
+    parts = _SEP.split(title)
+    if len(parts) > 1 and parts[-1].strip().lower() == (site_name or "").lower():
+        return title[: title.rfind(parts[-1])].rstrip(" -–—|·")
+    return title
