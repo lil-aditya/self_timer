@@ -81,3 +81,93 @@ kernel32.GetModuleHandleW.argtypes = [wt.LPCWSTR]
 kernel32.GetModuleHandleW.restype = wt.HMODULE
 shell32.Shell_NotifyIconW.argtypes = [wt.DWORD, ctypes.POINTER(NOTIFYICONDATAW)]
 shell32.Shell_NotifyIconW.restype = wt.BOOL
+
+
+# ---- the "Still there?" card ---------------------------------------------------
+gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
+try:
+    dwmapi = ctypes.WinDLL("dwmapi")
+except OSError:
+    dwmapi = None
+
+WM_PAINT, WM_ERASEBKGND, WM_TIMER, WM_SETCURSOR = 0x000F, 0x0014, 0x0113, 0x0020
+WM_MOUSEMOVE, WM_LBUTTONUP_, WM_MOUSELEAVE, WM_MOUSEACTIVATE = 0x0200, 0x0202, 0x02A3, 0x0021
+MA_NOACTIVATE = 3
+WS_POPUP = 0x80000000
+WS_EX_TOPMOST, WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE = 0x8, 0x80, 0x08000000
+CS_DROPSHADOW = 0x00020000
+SW_HIDE = 0
+SWP_NOACTIVATE, SWP_SHOWWINDOW = 0x10, 0x40
+HWND_TOPMOST = wt.HWND(-1)
+SPI_GETWORKAREA = 0x30
+DT_CENTER, DT_VCENTER, DT_SINGLELINE, DT_WORDBREAK, DT_NOPREFIX, DT_END_ELLIPSIS = 0x1, 0x4, 0x20, 0x10, 0x800, 0x8000
+TME_LEAVE = 0x2
+IDC_ARROW, IDC_HAND = 32512, 32649
+WDA_EXCLUDEFROMCAPTURE = 0x11
+
+
+class PAINTSTRUCT(ctypes.Structure):
+    _fields_ = [("hdc", wt.HDC), ("fErase", wt.BOOL), ("rcPaint", wt.RECT), ("fRestore", wt.BOOL),
+                ("fIncUpdate", wt.BOOL), ("rgbReserved", ctypes.c_byte * 32)]
+
+
+class TRACKMOUSEEVENT(ctypes.Structure):
+    _fields_ = [("cbSize", wt.DWORD), ("dwFlags", wt.DWORD), ("hwndTrack", wt.HWND), ("dwHoverTime", wt.DWORD)]
+
+
+user32.BeginPaint.argtypes = [wt.HWND, ctypes.POINTER(PAINTSTRUCT)]
+user32.BeginPaint.restype = wt.HDC
+user32.EndPaint.argtypes = [wt.HWND, ctypes.POINTER(PAINTSTRUCT)]
+user32.GetClientRect.argtypes = [wt.HWND, ctypes.POINTER(wt.RECT)]
+user32.FillRect.argtypes = [wt.HDC, ctypes.POINTER(wt.RECT), wt.HBRUSH]
+user32.DrawTextW.argtypes = [wt.HDC, wt.LPCWSTR, ctypes.c_int, ctypes.POINTER(wt.RECT), wt.UINT]
+user32.InvalidateRect.argtypes = [wt.HWND, ctypes.c_void_p, wt.BOOL]
+user32.SetTimer.argtypes = [wt.HWND, ctypes.c_size_t, wt.UINT, ctypes.c_void_p]
+user32.KillTimer.argtypes = [wt.HWND, ctypes.c_size_t]
+user32.SetWindowPos.argtypes = [wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wt.UINT]
+user32.ShowWindow.argtypes = [wt.HWND, ctypes.c_int]
+user32.SystemParametersInfoW.argtypes = [wt.UINT, wt.UINT, ctypes.c_void_p, wt.UINT]
+user32.TrackMouseEvent.argtypes = [ctypes.POINTER(TRACKMOUSEEVENT)]
+user32.LoadCursorW.argtypes = [wt.HINSTANCE, ctypes.c_void_p]
+user32.LoadCursorW.restype = wt.HANDLE
+user32.SetCursor.argtypes = [wt.HANDLE]
+user32.SetWindowDisplayAffinity.argtypes = [wt.HWND, wt.DWORD]
+gdi32.CreateFontW.argtypes = [ctypes.c_int] * 5 + [wt.DWORD] * 8 + [wt.LPCWSTR]
+gdi32.CreateFontW.restype = wt.HFONT
+gdi32.CreateSolidBrush.argtypes = [wt.COLORREF]
+gdi32.CreateSolidBrush.restype = wt.HBRUSH
+gdi32.CreatePen.argtypes = [ctypes.c_int, ctypes.c_int, wt.COLORREF]
+gdi32.CreatePen.restype = wt.HPEN
+gdi32.SelectObject.argtypes = [wt.HDC, wt.HGDIOBJ]
+gdi32.SelectObject.restype = wt.HGDIOBJ
+gdi32.DeleteObject.argtypes = [wt.HGDIOBJ]
+gdi32.SetBkMode.argtypes = [wt.HDC, ctypes.c_int]
+gdi32.SetTextColor.argtypes = [wt.HDC, wt.COLORREF]
+gdi32.RoundRect.argtypes = [wt.HDC] + [ctypes.c_int] * 6
+if dwmapi:
+    dwmapi.DwmSetWindowAttribute.argtypes = [wt.HWND, wt.DWORD, ctypes.c_void_p, wt.DWORD]
+
+
+def _rgb(hexstr):
+    h = hexstr.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return r | (g << 8) | (b << 16)
+
+
+THEMES = {
+    "light": {k: _rgb(v) for k, v in {"bg": "#fcfcfb", "ink": "#0b0b0b", "ink2": "#52514e", "muted": "#7d7b75",
+              "pri": "#2a78d6", "pri_hover": "#256abf", "pri_ink": "#ffffff", "sec": "#ecebe6", "sec_hover": "#e1e0d9",
+              "border": "#d9d8d2"}.items()},
+    "dark": {k: _rgb(v) for k, v in {"bg": "#232322", "ink": "#f0efec", "ink2": "#c3c2b7", "muted": "#8f8d86",
+             "pri": "#3987e5", "pri_hover": "#5598e7", "pri_ink": "#ffffff", "sec": "#3a3a37", "sec_hover": "#464642",
+             "border": "#3d3d3a"}.items()},
+}
+
+
+def _windows_theme():
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as k:
+            return "light" if winreg.QueryValueEx(k, "AppsUseLightTheme")[0] else "dark"
+    except OSError:
+        return "light"
