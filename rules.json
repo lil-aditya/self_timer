@@ -1,0 +1,101 @@
+{
+  "idle_minutes": 3,
+  "passive_idle_minutes": 30,
+  "idle_check": {
+    "enabled": true,
+    "answer_within_minutes": 2,
+    "after_confirm_minutes": 15
+  },
+  "exempt_idle_minutes": 180,
+  "no_idle_check": {
+    "apps": ["ms-teams.exe", "teams.exe", "zoom.exe", "webex.exe", "ciscocollabhost.exe", "safeexambrowser.exe",
+             "lockdownbrowser.exe", "lockdownbrowseroem.exe", "respondus lockdown browser.exe"],
+    "sites": ["meet.google.com", "teams.microsoft.com", "teams.live.com", "zoom.us", "webex.com",
+              "hackerrank.com", "hackerearth.com", "codesignal.com", "codility.com", "mettl.com", "imocha.io",
+              "testgorilla.com", "myamcat.com", "shl.com", "talview.com", "coderbyte.com", "glider.ai", "examly.io",
+              "tcsion.com", "hirepro.in", "cocubes.com", "wheebox.com", "speedexam.net", "coderpad.io", "hirevue.com",
+              "testlify.com", "karat.com", "interviewbit.com", "aon.com", "cut-e.com", "proctoru.com", "examity.com"],
+    "url_contains": ["docs.google.com/forms", "forms.office.com", "forms.gle", "leetcode.com/contest",
+                     "codeforces.com/contest", "codechef.com/start", "unstop.com/assessment", "/assessment", "/proctor"],
+    "title_pattern": "(?i)\\b(assessment|online test|proctor(ed|ing)?|exam|quiz|contest|interview round|coding round|OA)\\b"
+  },
+  "read_browser_urls": true,
+  "port": 7317,
+  "keep_days": 0,
+
+  "categories": {
+    "Coding": {
+      "apps": ["code.exe", "code - insiders.exe", "antigravity ide.exe", "antigravity.exe", "cursor.exe", "windsurf.exe",
+               "zed.exe", "pycharm64.exe", "idea64.exe", "webstorm64.exe", "clion64.exe", "goland64.exe", "studio64.exe",
+               "devenv.exe", "sublime_text.exe", "notepad++.exe", "windowsterminal.exe", "powershell.exe", "pwsh.exe",
+               "cmd.exe", "mintty.exe", "wsl.exe", "githubdesktop.exe", "postman.exe", "docker desktop.exe",
+               "matlab.exe", "rstudio.exe", "arduino ide.exe", "jupyter-lab.exe", "dbeaver.exe"],
+      "sites": ["github.com", "gitlab.com", "bitbucket.org", "stackoverflow.com", "stackexchange.com", "leetcode.com",
+                "codeforces.com", "codechef.com", "atcoder.jp", "hackerrank.com", "hackerearth.com", "geeksforgeeks.org",
+                "kaggle.com", "colab.research.google.com", "localhost", "127.0.0.1", "vercel.com", "netlify.com",
+                "npmjs.com", "pypi.org", "docs.python.org", "developer.mozilla.org", "w3schools.com", "huggingface.co",
+                "replit.com", "codepen.io", "console.cloud.google.com", "console.firebase.google.com", "aws.amazon.com",
+                "render.com", "supabase.com", "pytorch.org", "tensorflow.org", "readthedocs.io", "cplusplus.com",
+                "cppreference.com", "takeuforward.org", "neetcode.io"]
+    },
+    "Entertainment": {
+      "apps": ["spotify.exe", "vlc.exe", "steam.exe", "epicgameslauncher.exe", "netflix.exe", "potplayermini64.exe",
+               "mpc-hc64.exe", "wmplayer.exe", "microsoft.media.player.exe", "riotclientservices.exe", "valorant.exe"],
+      "sites": ["youtube.com", "music.youtube.com", "netflix.com", "primevideo.com", "hotstar.com", "jiocinema.com",
+                "open.spotify.com", "twitch.tv", "crunchyroll.com", "sonyliv.com", "zee5.com", "jiosaavn.com",
+                "gaana.com", "wynk.in", "9gag.com", "imdb.com", "chess.com", "lichess.org", "cricbuzz.com",
+                "espncricinfo.com", "aniwatch.to", "mxplayer.in", "poki.com"]
+    },
+    "Study": {
+      "apps": ["acrobat.exe", "acrord32.exe", "sumatrapdf.exe", "foxitpdfreader.exe", "onenote.exe", "obsidian.exe",
+               "anki.exe", "zotero.exe", "mendeley reference manager.exe", "xodo.exe", "drawboard pdf.exe"],
+      "sites": ["classroom.google.com", "coursera.org", "nptel.ac.in", "swayam.gov.in", "udemy.com", "edx.org",
+                "khanacademy.org", "wikipedia.org", "scholar.google.com", "arxiv.org", "researchgate.net",
+                "brilliant.org", "chegg.com", "desmos.com", "wolframalpha.com", "overleaf.com", "quizlet.com",
+                "unacademy.com", "pw.live", "studocu.com", "byjus.com", "mit.edu", "ocw.mit.edu", "sciencedirect.com",
+                "springer.com", "ieeexplore.ieee.org", ".ac.in", ".edu", "moodle"]
+    },
+    "Social": {
+      "apps": ["instagram.exe", "facebook.exe", "x.exe"],
+      "sites": ["instagram.com", "facebook.com", "x.com", "twitter.com", "reddit.com", "linkedin.com", "snapchat.com",
+                "threads.net", "pinterest.com", "quora.com", "tumblr.com", "bsky.app"]
+    },
+    "Communication": {
+      "apps": ["whatsapp.exe", "whatsapp.root.exe", "telegram.exe", "discord.exe", "slack.exe", "ms-teams.exe",
+               "teams.exe", "zoom.exe", "outlook.exe", "olk.exe", "thunderbird.exe", "signal.exe"],
+      "sites": ["web.whatsapp.com", "mail.google.com", "outlook.live.com", "outlook.office.com", "teams.microsoft.com",
+                "teams.live.com", "meet.google.com", "zoom.us", "discord.com", "web.telegram.org", "slack.com",
+                "messages.google.com"]
+    },
+    "Productivity": {
+      "apps": ["winword.exe", "excel.exe", "powerpnt.exe", "notion.exe", "figma.exe", "notepad.exe", "todo.exe",
+               "evernote.exe", "canva.exe", "snippingtool.exe", "screenclippinghost.exe", "calculator.exe"],
+      "sites": ["docs.google.com", "drive.google.com", "sheets.google.com", "slides.google.com", "calendar.google.com",
+                "keep.google.com", "notion.so", "canva.com", "figma.com", "trello.com", "office.com",
+                "onedrive.live.com", "sharepoint.com", "miro.com", "excalidraw.com", "todoist.com"]
+    },
+    "AI": {
+      "apps": ["chatgpt.exe", "claude.exe", "perplexity.exe"],
+      "sites": ["chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com", "perplexity.ai",
+                "copilot.microsoft.com", "poe.com", "chat.deepseek.com", "deepseek.com", "aistudio.google.com",
+                "notebooklm.google.com", "grok.com", "phind.com", "you.com"]
+    }
+  },
+
+  "title_rules": [
+    {
+      "sites": ["youtube.com"],
+      "pattern": "(?i)\\b(lecture|lec[ -]?\\d+|tutorial|course|nptel|class \\d+|exam|gate|jee|dsa|algorithms?|data structures?|crash course|full course|ocw|explained|calculus|physics|chemistry|machine learning|deep learning|python|java|c\\+\\+|javascript|react|sql|operating systems?|dbms|computer networks?)\\b",
+      "category": "Study"
+    }
+  ],
+
+  "passive": {
+    "apps": ["vlc.exe", "spotify.exe", "zoom.exe", "ms-teams.exe", "teams.exe", "acrobat.exe", "acrord32.exe",
+             "sumatrapdf.exe", "foxitpdfreader.exe", "netflix.exe", "potplayermini64.exe", "mpc-hc64.exe",
+             "microsoft.media.player.exe"],
+    "sites": ["youtube.com", "netflix.com", "primevideo.com", "hotstar.com", "jiocinema.com", "twitch.tv",
+              "crunchyroll.com", "sonyliv.com", "zee5.com", "meet.google.com", "zoom.us", "teams.microsoft.com",
+              "coursera.org", "nptel.ac.in", "udemy.com", "classroom.google.com"]
+  }
+}
