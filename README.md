@@ -24,3 +24,38 @@ Dashboard: <http://127.0.0.1:7317>
   - *Focus* is Coding + Study + AI + Productivity.
   - *Distraction* is Entertainment + Social.
 - **YouTube lectures count as Study.** A video whose title has words like *lecture, tutorial, NPTEL, DSA, course* or *exam* is counted as Study. Other videos count as Entertainment.
+
+## Tray icon
+
+Pulse puts a heartbeat icon next to the clock. It turns grey while paused. If you don't see it, check the **^** overflow arrow; you can drag it onto the taskbar.
+
+- **Hover:** today's screen time and focus time.
+- **Click:** open the dashboard.
+- **Right-click:** Open dashboard, Weekly report, Pause/Resume tracking, Quit Pulse.
+
+## Limits and a focus goal
+
+In the dashboard, under **Today's limits and focus goal**:
+
+- **Limit** a website (YouTube), an app, or a whole category (Social) to so many minutes a day. Pulse sends a Windows notification 5 minutes before the limit, another when you reach it, and another every 15 minutes you stay on it after that.
+- **Set a daily focus goal**, for example 4 hours. You get a notification when you reach it.
+- **Send a test notification** checks that Windows shows Pulse's alerts. If nothing appears, turn off *Do not disturb* in Windows notification settings.
+
+Limits reset at midnight.
+
+## Weekly report
+
+Switch the dashboard to **Week**, or right-click the tray icon and choose **Weekly report**. It shows:
+
+- screen time and focus share compared with the week before
+- which categories went up or down
+- your best focus day and longest focus session
+- the hour you focus best, and when distraction peaks
+- how many nights you were up past midnight
+
+Every Sunday after 8 PM, a notification sums up your week. Click it to open the report.
+
+## Export and cleanup
+
+- **Download as CSV:** the link at the bottom of the dashboard downloads the day or week on screen. It opens in Excel or Google Sheets.
+- **Delete old history automatically:** set `"keep_days": 90` in `rules.json` to keep only the last 90 days. The default `0` keeps everything.
