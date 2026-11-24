@@ -84,3 +84,63 @@ _EDGE_EXTRA = re.compile(r"\s+and \d+ more pages?$", re.I)
 _EDGE_PROFILE = re.compile(r"\s+[-–—]\s+(Personal|Work|Profile \d+|InPrivate)\s*$", re.I)
 _BADGE = re.compile(r"^\(\d+\+?\)\s*")
 _DIRTY = re.compile(r"^[●•*]\s*")
+
+
+class Rules:
+    """Loaded from rules.json plus the dashboard's overrides.json. Thread-safe."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.load()
+
+    def load(self):
+        with open(RULES_PATH, encoding="utf-8") as f:
+            cfg = json.load(f)
+        overrides = {"apps": {}, "sites": {}}
+        if os.path.exists(OVERRIDES_PATH):
+            try:
+                with open(OVERRIDES_PATH, encoding="utf-8") as f:
+                    o = json.load(f)
+                overrides["apps"].update(o.get("apps", {}))
+                overrides["sites"].update(o.get("sites", {}))
+            except (OSError, ValueError):
+                pass
+        app_cat, site_cat, suffix_cat, contains_cat = {}, {}, [], []
+        for cat, spec in cfg.get("categories", {}).items():
+            for a in spec.get("apps", []):
+                app_cat[a.lower()] = cat
+            for s in spec.get("sites", []):
+                s = s.lower()
+                if s.startswith("."):
+                    suffix_cat.append((s, cat))
+                elif "." not in s and s != "localhost":
+                    contains_cat.append((s, cat))     # e.g. "moodle" matches moodle.anything
+                else:
+                    site_cat[s] = cat
+        title_rules = []
+        for r in cfg.get("title_rules", []):
+            try:
+                title_rules.append(({s.lower() for s in r.get("sites", [])},
+                                    {a.lower() for a in r.get("apps", [])},
+                                    re.compile(r["pattern"]), r["category"]))
+            except (re.error, KeyError):
+                pass
+        known = set(SITE_NAMES) | set(site_cat) | set(TITLE_SITES.values())
+        with self._lock:
+            self.cfg = cfg
+            self.app_cat, self.site_cat = app_cat, site_cat
+            self.suffix_cat, self.contains_cat = suffix_cat, contains_cat
+            self.title_rules = title_rules
+            self.overrides = overrides
+            self.known_sites = sorted(known, key=len, reverse=True)
+            self.passive_apps = {a.lower() for a in cfg.get("passive", {}).get("apps", [])}
+            self.passive_sites = {s.lower() for s in cfg.get("passive", {}).get("sites", [])}
+            ne = cfg.get("no_idle_check", {})
+            self.exempt_apps = {a.lower() for a in ne.get("apps", [])}
+            self.exempt_sites = [s.lower() for s in ne.get("sites", [])]
+            self.exempt_urls = [u.lower() for u in ne.get("url_contains", [])]
+            try:
+                self.exempt_title = re.compile(ne["title_pattern"]) if ne.get("title_pattern") else None
+            except re.error:
+                self.exempt_title = None
+            self._cache = {}
