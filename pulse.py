@@ -60,3 +60,62 @@ def start_background():
             return True
         time.sleep(0.25)
     return False
+
+
+def desktop_dir():
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders") as k:
+            return winreg.QueryValueEx(k, "Desktop")[0]
+    except OSError:
+        return os.path.join(os.environ.get("USERPROFILE", ""), "Desktop")
+
+
+def install():
+    import winreg
+    cmd = f'"{pythonw()}" "{os.path.join(BASE, "pulse.py")}"'
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+        winreg.SetValueEx(k, APP_NAME, 0, winreg.REG_SZ, cmd)
+    print("Pulse will now start automatically when you sign in to Windows.")
+    shortcut = os.path.join(desktop_dir(), "Pulse.url")
+    try:
+        with open(shortcut, "w", encoding="utf-8") as f:
+            f.write(f"[InternetShortcut]\nURL={url()}\n")
+        print(f"Desktop shortcut: {shortcut}")
+    except OSError as e:
+        print(f"Could not create the desktop shortcut ({e}). Bookmark {url()} instead.")
+    if not is_running():
+        print("Starting Pulse in the background...")
+        if not start_background():
+            print(f"Pulse didn't answer. Check {os.path.join(DATA, 'pulse.log')}")
+            return
+    print(f"Pulse is running. Dashboard: {url()}")
+    webbrowser.open(url())
+
+
+def uninstall():
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+            winreg.DeleteValue(k, APP_NAME)
+        print("Pulse will no longer start with Windows. Your history in data/pulse.db is kept.")
+    except FileNotFoundError:
+        print("Pulse was not set to start with Windows.")
+    stop()
+
+
+def stop():
+    try:
+        req = urllib.request.Request(url() + "api/quit", data=b"{}", method="POST",
+                                     headers={"X-Pulse": "1", "Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=3)
+        print("Pulse stopped.")
+    except Exception:
+        print("Pulse wasn't running.")
+
+
+def open_dashboard():
+    if not is_running():
+        start_background()
+    webbrowser.open(url())
