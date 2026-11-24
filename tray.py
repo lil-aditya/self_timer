@@ -307,3 +307,71 @@ class Tray(threading.Thread):
             return False
         with self._lock:
             return bool(shell32.Shell_NotifyIconW(op, ctypes.byref(nid or self._nid(flags))))
+
+    def _proc(self, hwnd, msg, wparam, lparam):
+        try:
+            if msg == self.WM_TRAY:
+                ev = lparam & 0xFFFF
+                if ev == WM_LBUTTONUP:
+                    _open(self.url)
+                elif ev in (WM_RBUTTONUP, WM_CONTEXTMENU):
+                    self._menu()
+                elif ev == NIN_BALLOONUSERCLICK:
+                    _open(self._balloon_url or self.url)
+                return 0
+            if msg == getattr(self, "WM_TASKBAR", -1):      # Explorer restarted: put the icon back
+                self._shell(NIM_ADD, NIF_MESSAGE | NIF_ICON | NIF_TIP)
+                return 0
+            if msg == self.WM_PROMPT_SHOW:
+                self._show_prompt()
+                return 0
+            if msg == self.WM_PROMPT_HIDE:
+                self._hide_prompt()
+                return 0
+            if msg == WM_CLOSE:
+                if self.prompt_hwnd:
+                    user32.DestroyWindow(self.prompt_hwnd)
+                    self.prompt_hwnd = None
+                user32.DestroyWindow(hwnd)
+                return 0
+            if msg == WM_DESTROY:
+                self._shell(NIM_DELETE, 0)
+                self.hwnd = None
+                user32.PostQuitMessage(0)
+                return 0
+        except Exception:
+            log.exception("tray message failed")
+        return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+    def _menu(self):
+        m = user32.CreatePopupMenu()
+        try:
+            user32.AppendMenuW(m, MF_STRING, self.CMD_OPEN, "Open dashboard")
+            user32.SetMenuDefaultItem(m, self.CMD_OPEN, 0)
+            user32.AppendMenuW(m, MF_STRING, self.CMD_WEEK, "Weekly report")
+            user32.AppendMenuW(m, MF_SEPARATOR, 0, None)
+            try:
+                status = self.menu_status()
+            except Exception:
+                status = None
+            if status:
+                user32.AppendMenuW(m, MF_STRING | MF_GRAYED, 0, status)
+            user32.AppendMenuW(m, MF_STRING, self.CMD_PAUSE, "Resume tracking" if self.is_paused() else "Pause tracking")
+            user32.AppendMenuW(m, MF_SEPARATOR, 0, None)
+            user32.AppendMenuW(m, MF_STRING, self.CMD_QUIT, "Quit Pulse")
+            pt = wt.POINT()
+            user32.GetCursorPos(ctypes.byref(pt))
+            user32.SetForegroundWindow(self.hwnd)
+            cmd = user32.TrackPopupMenu(m, TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, self.hwnd, None)
+            user32.PostMessageW(self.hwnd, 0, 0, 0)
+        finally:
+            user32.DestroyMenu(m)
+        if cmd == self.CMD_OPEN:
+            _open(self.url)
+        elif cmd == self.CMD_WEEK:
+            _open(self.url + "#week")
+        elif cmd == self.CMD_PAUSE:
+            self.on_pause_toggle()
+            self.set_icon("paused" if self.is_paused() else "active")
+        elif cmd == self.CMD_QUIT:
+            threading.Thread(target=self.on_quit, daemon=True).start()
