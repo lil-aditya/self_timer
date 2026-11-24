@@ -104,3 +104,40 @@ def uwp_child_pid(hwnd, host_pid):
 
 
 _desc_cache = {}
+
+
+def file_description(path):
+    if path in _desc_cache:
+        return _desc_cache[path]
+    desc = None
+    try:
+        size = version.GetFileVersionInfoSizeW(path, None)
+        if size:
+            buf = ctypes.create_string_buffer(size)
+            if version.GetFileVersionInfoW(path, 0, size, buf):
+                ptr, ln = ctypes.c_void_p(), wt.UINT()
+                langs = []
+                if version.VerQueryValueW(buf, r"\VarFileInfo\Translation", ctypes.byref(ptr), ctypes.byref(ln)) and ln.value >= 4:
+                    arr = ctypes.cast(ptr, ctypes.POINTER(ctypes.c_ushort))
+                    langs.append((arr[0], arr[1]))
+                langs += [(0x0409, 0x04B0), (0x0409, 0x04E4)]
+                for lang, cp in langs:
+                    key = "\\StringFileInfo\\%04x%04x\\FileDescription" % (lang, cp)
+                    if version.VerQueryValueW(buf, key, ctypes.byref(ptr), ctypes.byref(ln)) and ln.value:
+                        s = ctypes.wstring_at(ptr, ln.value).rstrip("\x00").strip()
+                        if s:
+                            desc = s
+                            break
+    except Exception:
+        desc = None
+    _desc_cache[path] = desc
+    return desc
+
+
+def friendly_name(exe, path):
+    if exe in KNOWN_APPS:
+        return KNOWN_APPS[exe]
+    desc = file_description(path) if path else None
+    if desc and len(desc) <= 40:
+        return desc
+    return os.path.splitext(exe)[0].replace("_", " ").title()
