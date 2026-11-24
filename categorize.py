@@ -322,3 +322,24 @@ def project_name(exe, title):
     if exe in PROJECT_FIRST:
         return parts[0]
     return None
+
+
+def parse_host(url):
+    """'youtube.com/watch?v=1' -> 'youtube.com'; 'localhost:3000/x' -> 'localhost'; chrome://... -> None."""
+    if not url:
+        return None
+    u = url.strip()
+    if not u or " " in u:
+        return None
+    m = re.match(r"^(?:([a-z][a-z0-9+.-]*)://)?([^/?#]*)", u, re.I)
+    scheme, host = (m.group(1) or "").lower(), (m.group(2) or "").lower()
+    if scheme == "file":
+        return "file"
+    if scheme and scheme not in ("http", "https"):
+        return None
+    host = host.split("@")[-1].split(":")[0].strip(".")
+    if host.startswith("www."):
+        host = host[4:]
+    if not host or ("." not in host and host != "localhost"):
+        return None
+    return host
