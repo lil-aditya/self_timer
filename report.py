@@ -291,3 +291,23 @@ def timeline(events, merge_gap=60):
         else:
             segs.append({"t0": e["t0"], "t1": e["t1"], "cat": e["cat"], "labels": {label: e["d"]}})
     return [{"t0": s["t0"], "t1": s["t1"], "cat": s["cat"], "top": _top(s["labels"], 3)} for s in segs]
+
+
+def day_report(conn, rules, d):
+    start = midnight(d)
+    end = midnight(d + timedelta(days=1))
+    events = load_events(conn, start, end, rules)
+    out = summarize(events, rules)
+    out.update(view="day", date=d.isoformat(), start=start, end=end,
+               hourly=hourly(events, start), timeline=timeline(events))
+    now = time.time()
+    prev = d - timedelta(days=1)
+    pstart = midnight(prev)
+    if start <= now < end:
+        cut = pstart + (now - start)
+        label = "vs yesterday at this time"
+    else:
+        cut = start
+        label = "vs the day before"
+    out["compare"] = {"label": label, "secs": round(sum(e["d"] for e in load_events(conn, pstart, cut, rules)))}
+    return out
