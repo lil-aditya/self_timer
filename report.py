@@ -192,3 +192,12 @@ def _fmt(secs):
         return f"{m}m"
     h, r = divmod(m, 60)
     return f"{h}h {r}m" if r else f"{h}h"
+
+
+def export_rows(conn, rules, t0, t1):
+    yield ["start", "end", "seconds", "app", "category", "browser", "website", "project_or_window", "title"]
+    for e in load_events(conn, t0, t1, rules):
+        yield [time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(e["t0"])),
+               time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(e["t1"])),
+               round(e["d"]), e["app"], e["cat"], e["browser"] or "", e["site_name"] or "",
+               "" if e["browser"] else e["detail"], e["page"]]
