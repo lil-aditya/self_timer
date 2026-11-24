@@ -149,3 +149,67 @@ class Monitor(threading.Thread):
         k = limit["kind"]
         return ((k == "site" and cur["site"] == limit["key"]) or (k == "app" and cur["exe"] == limit["key"])
                 or (k == "category" and cur["cat"] == limit["key"]))
+
+    # ---- the checks ----------------------------------------------------------------
+    def check(self, conn, now):
+        today = date.today()
+        if self.state.get("day") != today.isoformat():
+            self.state["day"] = today.isoformat()
+            self.state["fired"] = {}
+        fired = self.state.setdefault("fired", {})
+        u = report.usage(conn, self.rules, report.midnight(today), now)
+        self.today_usage = u
+        if self.tray:
+            paused = " (paused)" if self.tracker.paused else ""
+            self.tray.set_tooltip(f"Pulse{paused}\nToday {fmt(u['total'])} · Focus {fmt(u['focus'])}")
+
+        cur = self._current()
+        changed = False
+        for lim in self.limits.all():
+            used, cap, lid = used_for(lim, u), lim["minutes"] * 60, lim["id"]
+            label = lim["label"]
+            if lim["kind"] == "goal":
+                if used >= cap and f"{lid}:done" not in fired:
+                    self._notify("Focus goal reached", f"{fmt(used)} of focused work today. Nice work.")
+                    fired[f"{lid}:done"] = now
+                    changed = True
+                continue
+            st = limit_status(lim, used)["state"]
+            if st == "over":
+                last = fired.get(f"{lid}:over")
+                if last is None:
+                    self._notify(f"Time's up for {label}", f"You've used {fmt(used)} of your {fmt(cap)} daily limit.")
+                    fired[f"{lid}:over"] = now
+                    changed = True
+                elif self._active_on(lim, cur) and now - last >= 15 * 60:
+                    self._notify(f"Still on {label}", f"{fmt(used - cap)} over your daily limit of {fmt(cap)}.")
+                    fired[f"{lid}:over"] = now
+                    changed = True
+            elif st == "near" and f"{lid}:near" not in fired:
+                self._notify(f"{fmt(cap - used)} left for {label}", f"{fmt(used)} used of your {fmt(cap)} daily limit.")
+                fired[f"{lid}:near"] = now
+                changed = True
+
+        # Sunday evening: the week in one line, click for the full report
+        dt = datetime.now()
+        week_id = f"{today.isocalendar()[0]}-W{today.isocalendar()[1]}"
+        if dt.weekday() == 6 and dt.hour >= 20 and self.state.get("weekly") != week_id:
+            wk = report.usage(conn, self.rules, report.midnight(today - timedelta(days=6)), now)
+            if wk["total"] > 0:
+                pct = round(wk["focus"] / wk["total"] * 100)
+                self._notify("Your week in Pulse",
+                             f"{fmt(wk['total'])} on screen, {fmt(wk['focus'])} focused ({pct}%). Click to see your weekly report.",
+                             self.url + "#week")
+            self.state["weekly"] = week_id
+            changed = True
+        if changed:
+            self._save()
+
+    def prune(self, conn):
+        keep = int(self.rules.get("keep_days", 0) or 0)
+        if keep > 0:
+            cut = time.time() - keep * 86400
+            n = conn.execute("DELETE FROM events WHERE t1 < ?", (cut,)).rowcount
+            conn.commit()
+            if n:
+                log.info("deleted %d events older than %d days", n, keep)
