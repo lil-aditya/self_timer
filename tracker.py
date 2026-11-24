@@ -171,3 +171,74 @@ class Tracker(threading.Thread):
         """Called by the tray when you press a button on the 'Still there?' card."""
         if ans in ("here", "away"):
             self._answer = ans
+
+    # ---- idle handling ------------------------------------------------------
+    def _end_prompt(self):
+        self._asking = None
+        self._answer = None
+        if self.prompt:
+            self.prompt.hide_idle()
+
+    def _idle_policy(self, snap, idle, now):
+        """Returns (action, status, stop_at, resume_at).
+        action: 'count' keep recording; 'stop' end the activity at stop_at;
+                'split' end it at stop_at and start a new one at resume_at."""
+        r = self.rules
+        last_input = now - idle
+        info = r.enrich(snap["exe"], snap["app"], snap["title"], snap["host"], snap["browser"])
+        exempt = r.is_exempt(snap["exe"], snap["host"], snap["url"], snap["title"], info["cat"])
+        key = (snap["exe"], snap["title"])
+        check = r.idle_check()
+        if exempt:
+            limit = 60 * r.get("exempt_idle_minutes", 180)
+        else:
+            limit = 60 * r.get("passive_idle_minutes" if r.is_passive(snap["exe"], snap["host"]) else "idle_minutes", 3)
+            if self._confirmed_key == key:
+                limit = max(limit, check["confirm"])
+        if self._confirmed_key and self._confirmed_key != key:
+            self._confirmed_key = None
+
+        # 1. the "Still there?" card is showing
+        a = self._asking
+        if a:
+            ans, self._answer = self._answer, None
+            if last_input > a["last_input"] + 0.5 and a["resumed_at"] is None:
+                a["resumed_at"] = last_input            # you came back (without answering yet)
+            if exempt:                                  # switched into a meeting or test: never leave it up
+                self._end_prompt()
+                return "count", "tracking", None, None
+            if ans == "here":
+                self._end_prompt()
+                self._confirmed_key = key
+                return "count", "tracking", None, None
+            if ans == "away" or now >= a["deadline"]:
+                self._end_prompt()
+                if a["resumed_at"] is not None or ans == "away":
+                    # you're back: drop the quiet minutes, carry on from when you returned
+                    return "split", "tracking", a["last_input"], a["resumed_at"] or now
+                self._latched = a["last_input"]
+                return "stop", "idle", a["last_input"], None
+            return "count", "asking", None, None
+
+        # 2. after an unanswered card: nothing counts until you touch the mouse or keyboard
+        if self._latched is not None:
+            if last_input <= self._latched + 0.5:
+                return "stop", "idle", self._latched, None
+            self._latched = None
+
+        if idle < limit:
+            return "count", "tracking", None, None
+
+        # 3. quiet for too long: ask, or (meetings, tests, or no tray) stop quietly
+        if not exempt and check["enabled"] and self.prompt and self.prompt.can_prompt():
+            self._asking = {"last_input": last_input, "deadline": now + check["answer"], "resumed_at": None}
+            self._answer = None
+            label = info["site_name"] if snap["browser"] else (
+                f'{snap["app"]} · {info["detail"]}' if info["detail"] and info["detail"] != snap["app"] else snap["app"])
+            self.prompt.ask_idle(label, idle, self._asking["deadline"])
+            return "count", "asking", None, None
+        self._latched = last_input
+        return "stop", "idle", last_input, None
+
+    def stop(self):
+        self.stop_event.set()
