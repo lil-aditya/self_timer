@@ -529,3 +529,44 @@ class Tray(threading.Thread):
                      DT_CENTER | DT_VCENTER | DT_SINGLELINE)
         finally:
             user32.EndPaint(hwnd, ctypes.byref(ps))
+
+    # ---- called from any thread -------------------------------------------------
+    def can_prompt(self):
+        return bool(self.hwnd)
+
+    def ask_idle(self, label, idle_secs, deadline):
+        self._prompt_info = {"label": label, "idle": idle_secs, "deadline": deadline}
+        if self.hwnd:
+            user32.PostMessageW(self.hwnd, self.WM_PROMPT_SHOW, 0, 0)
+
+    def hide_idle(self):
+        if self.hwnd:
+            user32.PostMessageW(self.hwnd, self.WM_PROMPT_HIDE, 0, 0)
+
+    def set_tooltip(self, text):
+        if text != self._tip:
+            self._tip = text
+            self._shell(NIM_MODIFY, NIF_TIP)
+
+    def set_icon(self, name):
+        if name != self._icon_name and name in getattr(self, "icons", {}):
+            self._icon_name = name
+            self._shell(NIM_MODIFY, NIF_ICON)
+
+    def notify(self, title, text, url=None):
+        """Shows a Windows notification. Clicking it opens `url` (default: the dashboard)."""
+        if not self.hwnd:
+            log.info("notification (no tray): %s - %s", title, text)
+            return False
+        self._balloon_url = url
+        nid = self._nid(NIF_INFO)
+        nid.szInfoTitle = title[:63]
+        nid.szInfo = text[:255]
+        nid.dwInfoFlags = NIIF_USER | NIIF_LARGE_ICON
+        nid.hBalloonIcon = getattr(self, "large_icon", None) or self.icons.get("active")
+        log.info("notify: %s - %s", title, text)
+        return self._shell(NIM_MODIFY, NIF_INFO, nid)
+
+    def stop(self):
+        if self.hwnd:
+            user32.PostMessageW(self.hwnd, WM_CLOSE, 0, 0)
