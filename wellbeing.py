@@ -69,3 +69,26 @@ class Limits:
                 self.items.append({"id": uuid.uuid4().hex[:8], "kind": kind, "key": key,
                                    "label": (label or key)[:60], "minutes": int(float(minutes))})
             _write_json(LIMITS_PATH, self.items)
+
+
+def used_for(limit, u):
+    kind, key = limit["kind"], limit["key"]
+    if kind == "goal":
+        return u["focus"]
+    if kind == "category":
+        return u["cats"].get(key, 0)
+    if kind == "site":
+        return u["sites"].get(key, 0)
+    return u["apps"].get(key, 0)
+
+
+def limit_status(limit, used):
+    cap = limit["minutes"] * 60
+    if limit["kind"] == "goal":
+        return {"state": "done" if used >= cap else "progress",
+                "text": "Goal reached" if used >= cap else f"{fmt(cap - used)} to go"}
+    if used >= cap:
+        return {"state": "over", "text": f"Over by {fmt(used - cap)}" if used - cap >= 60 else "Limit reached"}
+    if used >= cap - min(5 * 60, cap * 0.2):
+        return {"state": "near", "text": f"{fmt(cap - used)} left"}
+    return {"state": "ok", "text": f"{fmt(cap - used)} left"}
