@@ -296,3 +296,29 @@ def strip_site_suffix(title, site_name):
     if len(parts) > 1 and parts[-1].strip().lower() == (site_name or "").lower():
         return title[: title.rfind(parts[-1])].rstrip(" -–—|·")
     return title
+
+
+def strip_app_suffix(title, exe, app):
+    """'Notes.pdf - Adobe Acrobat Reader (64-bit)' -> 'Notes.pdf'."""
+    parts = re.split(r"\s+[-–—|]\s+", title)
+    if len(parts) > 1:
+        last = parts[-1].lower()
+        stem = os.path.splitext(exe or "")[0].lower()
+        if (stem and stem in last) or (app and app.lower() in last):
+            return title[: title.rfind(parts[-1])].rstrip(" -–—|")
+    return title
+
+
+def project_name(exe, title):
+    if not title:
+        return None
+    parts = [p.strip() for p in re.split(r"\s+[-–—]\s+", title) if p.strip()]
+    if exe in VSCODE_LIKE:
+        app_name = VSCODE_LIKE[exe].lower()
+        for i, p in enumerate(parts):
+            if p.lower() == app_name or p.lower().startswith(app_name.split()[0]):
+                return parts[i - 1] if i > 0 else "(no folder open)"
+        return parts[-1]
+    if exe in PROJECT_FIRST:
+        return parts[0]
+    return None
