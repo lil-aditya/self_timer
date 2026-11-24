@@ -165,3 +165,29 @@ class Rules:
             json.dump(o, f, indent=2)
         os.replace(tmp, OVERRIDES_PATH)
         self.load()
+
+    # ---- sites ----------------------------------------------------------
+    def site_key(self, host):
+        """Group subdomains: www.youtube.com / m.youtube.com -> youtube.com, but keep music.youtube.com."""
+        if not host:
+            return None
+        for k in self.known_sites:
+            if host == k or host.endswith("." + k):
+                return k
+        return host
+
+    @staticmethod
+    def site_name(key):
+        if not key:
+            return "Other pages"
+        if key in SITE_NAMES:
+            return SITE_NAMES[key]
+        if key == "file":
+            return "Local files"
+        return key
+
+    def is_passive(self, exe, host):
+        if exe in self.passive_apps:
+            return True
+        key = self.site_key(host)
+        return bool(key and key in self.passive_sites)
