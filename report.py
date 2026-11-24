@@ -96,3 +96,99 @@ def by_hour_of_day(events):
             _add(hours[lt.tm_hour], e["cat"], b - a)
             a = b
     return hours
+
+
+def week_insights(events, prev_events, days):
+    out = []
+    total = sum(e["d"] for e in events)
+    if not total:
+        return out, {}
+    prev_total = sum(e["d"] for e in prev_events)
+    focus = sum(e["d"] for e in events if e["cat"] in PRODUCTIVE)
+    prev_focus = sum(e["d"] for e in prev_events if e["cat"] in PRODUCTIVE)
+    fmt = _fmt
+
+    if prev_total:
+        diff = total - prev_total
+        pct = round(abs(diff) / prev_total * 100)
+        out.append({"title": "Screen time " + ("up" if diff > 0 else "down"), "tone": "bad" if diff > 0 else "good",
+                    "text": f"{fmt(total)} this week, {fmt(abs(diff))} {'more' if diff > 0 else 'less'} than the week before ({pct}%)."})
+    else:
+        out.append({"title": "Screen time", "tone": "neutral",
+                    "text": f"{fmt(total)} this week. Next week you'll see how it compares."})
+
+    share = round(focus / total * 100)
+    if prev_total:
+        pshare = round(prev_focus / prev_total * 100)
+        out.append({"title": "Focus share", "tone": "good" if share >= pshare else "bad",
+                    "text": f"{share}% of your screen time was focused work, against {pshare}% the week before."})
+    else:
+        out.append({"title": "Focus share", "tone": "neutral", "text": f"{share}% of your screen time was focused work."})
+
+    cats, pcats = {}, {}
+    for e in events:
+        _add(cats, e["cat"], e["d"])
+    for e in prev_events:
+        _add(pcats, e["cat"], e["d"])
+    if prev_total:
+        movers = sorted(((c, cats.get(c, 0) - pcats.get(c, 0)) for c in CATEGORIES
+                         if max(cats.get(c, 0), pcats.get(c, 0)) >= 1800), key=lambda kv: -abs(kv[1]))
+        for c, delta in movers[:2]:
+            if abs(delta) >= 900:
+                good = (delta > 0) == (c in PRODUCTIVE)
+                out.append({"title": f"{c} {'up' if delta > 0 else 'down'}", "tone": "good" if good else "bad",
+                            "text": f"{c} took {fmt(cats.get(c, 0))}, {fmt(abs(delta))} {'more' if delta > 0 else 'less'} than the week before."})
+
+    # best focus day, and the longest streak of the week
+    per_day = {}
+    for e in events:
+        if e["cat"] in PRODUCTIVE:
+            _add(per_day, time.strftime("%Y-%m-%d", time.localtime(e["t0"])), e["d"])
+    if per_day:
+        best_day, secs = max(per_day.items(), key=lambda kv: kv[1])
+        out.append({"title": "Best focus day", "tone": "neutral",
+                    "text": f"{date.fromisoformat(best_day).strftime('%A')}, with {fmt(secs)} of focused work."})
+    streak, start = longest_streak(events)
+    if streak >= 600:
+        out.append({"title": "Longest focus session", "tone": "neutral",
+                    "text": f"{fmt(streak)} on {time.strftime('%A from %I:%M %p', time.localtime(start)).replace(' 0', ' ')}."})
+
+    hours = by_hour_of_day(events)
+    fh = max(range(24), key=lambda h: sum(v for c, v in hours[h].items() if c in PRODUCTIVE))
+    dh = max(range(24), key=lambda h: sum(v for c, v in hours[h].items() if c in DISTRACTING))
+    label = lambda h: f"{(h % 12) or 12} {'AM' if h < 12 else 'PM'}"
+    if sum(v for c, v in hours[fh].items() if c in PRODUCTIVE) > 0:
+        out.append({"title": "Your focus hour", "tone": "neutral",
+                    "text": f"You get the most focused work done around {label(fh)}."})
+    if sum(v for c, v in hours[dh].items() if c in DISTRACTING) >= 900:
+        out.append({"title": "Distraction peak", "tone": "neutral",
+                    "text": f"Entertainment and social media peak around {label(dh)}."})
+
+    # late nights: activity between midnight and 5 AM
+    nights, latest = set(), None
+    for e in events:
+        lt = time.localtime(e["t1"] - 1)
+        if lt.tm_hour < 5:
+            nights.add(time.strftime("%Y-%m-%d", lt))
+            mins = lt.tm_hour * 60 + lt.tm_min
+            if latest is None or mins > latest[0]:
+                latest = (mins, e["t1"])
+    if nights:
+        out.append({"title": "Late nights", "tone": "bad" if len(nights) >= 3 else "neutral",
+                    "text": f"On your laptop after midnight on {len(nights)} of 7 nights; the latest was "
+                            f"{time.strftime('%I:%M %p', time.localtime(latest[1])).lstrip('0')}."})
+
+    compare = {c: {"now": round(cats.get(c, 0)), "prev": round(pcats.get(c, 0))} for c in CATEGORIES
+               if cats.get(c, 0) or pcats.get(c, 0)}
+    return out, compare
+
+
+def _fmt(secs):
+    secs = int(round(secs))
+    if secs < 60:
+        return f"{secs}s"
+    m = round(secs / 60)
+    if m < 60:
+        return f"{m}m"
+    h, r = divmod(m, 60)
+    return f"{h}h {r}m" if r else f"{h}h"
