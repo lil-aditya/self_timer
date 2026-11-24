@@ -92,3 +92,60 @@ def limit_status(limit, used):
     if used >= cap - min(5 * 60, cap * 0.2):
         return {"state": "near", "text": f"{fmt(cap - used)} left"}
     return {"state": "ok", "text": f"{fmt(cap - used)} left"}
+
+
+class Monitor(threading.Thread):
+    """Every few seconds: keep the tray icon and tooltip current.
+    Every 30 seconds: check limits and the focus goal and send notifications."""
+
+    def __init__(self, db_path, rules, limits, tracker, tray, url):
+        super().__init__(name="monitor", daemon=True)
+        self.db_path, self.rules, self.limits = db_path, rules, limits
+        self.tracker, self.tray, self.url = tracker, tray, url
+        self.stop_event = threading.Event()
+        self.state = _read_json(STATE_PATH, {})
+        self.today_usage = None
+
+    def stop(self):
+        self.stop_event.set()
+
+    def run(self):
+        conn = sqlite3.connect(self.db_path, timeout=10)
+        last_heavy, last_prune = 0.0, 0.0
+        while not self.stop_event.is_set():
+            now = time.time()
+            try:
+                if self.tray:
+                    self.tray.set_icon("paused" if self.tracker.paused else "active")
+                if now - last_heavy >= 30:
+                    last_heavy = now
+                    self.check(conn, now)
+                if now - last_prune >= 6 * 3600:
+                    last_prune = now
+                    self.prune(conn)
+            except Exception:
+                log.exception("monitor tick failed")
+            self.stop_event.wait(5)
+        conn.close()
+
+    # ---- helpers -----------------------------------------------------------------
+    def _save(self):
+        _write_json(STATE_PATH, self.state)
+
+    def _notify(self, title, text, url=None):
+        if self.tray:
+            self.tray.notify(title, text, url)
+
+    def _current(self):
+        st = self.tracker.state()
+        if st.get("status") != "tracking" or not st.get("exe"):
+            return None
+        info = self.rules.enrich(st["exe"], st["app"], st["title"], st["host"], st["browser"])
+        return {"exe": st["exe"], "site": info["site"], "cat": info["cat"]}
+
+    def _active_on(self, limit, cur):
+        if not cur:
+            return False
+        k = limit["kind"]
+        return ((k == "site" and cur["site"] == limit["key"]) or (k == "app" and cur["exe"] == limit["key"])
+                or (k == "category" and cur["cat"] == limit["key"]))
