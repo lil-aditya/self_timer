@@ -119,3 +119,87 @@ def open_dashboard():
     if not is_running():
         start_background()
     webbrowser.open(url())
+
+
+def run():
+    os.makedirs(DATA, exist_ok=True)
+    handler = RotatingFileHandler(os.path.join(DATA, "pulse.log"), maxBytes=1_000_000, backupCount=2, encoding="utf-8")
+    logging.basicConfig(level=logging.INFO, handlers=[handler],
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    log = logging.getLogger("pulse")
+
+    # one copy at a time
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    mutex = kernel32.CreateMutexW(None, False, "Local\\PulseActivityTracker")
+    if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+        log.info("another Pulse is already running; exiting")
+        print(f"Pulse is already running: {url()}")
+        return
+
+    from categorize import Rules
+    from report import init_db
+    from server import make_server
+    from tracker import Tracker, HAVE_UIA
+    from tray import Tray
+    from wellbeing import Limits, Monitor, fmt
+
+    init_db(DB_PATH)
+    rules = Rules()
+    limits = Limits()
+    tracker = Tracker(DB_PATH, rules)
+    tracker.start()
+
+    httpd = None
+    monitor = None
+
+    def quit_all():
+        tracker.stop()
+        if monitor:
+            monitor.stop()
+        tray.stop()
+        tracker.join(timeout=5)
+        if httpd:
+            httpd.shutdown()
+
+    def toggle_pause():
+        tracker.paused = not tracker.paused
+
+    def menu_status():
+        u = monitor.today_usage if monitor else None
+        return f"Today {fmt(u['total'])}  ·  Focus {fmt(u['focus'])}" if u else None
+
+    tray = Tray(url(), DATA, menu_status, lambda: tracker.paused, toggle_pause, quit_all)
+    tray.start()
+    tray.ready.wait(5)
+    tray.on_idle_answer = tracker.answer     # buttons on the "Still there?" card
+    tracker.prompt = tray
+
+    try:
+        httpd = make_server(port(), DB_PATH, rules, tracker, quit_all, limits, tray.notify)
+    except OSError as e:
+        log.error("port %s is busy (%s). Change \"port\" in rules.json.", port(), e)
+        print(f"Port {port()} is busy. Change \"port\" in rules.json.")
+        tracker.stop()
+        tray.stop()
+        return
+    monitor = Monitor(DB_PATH, rules, limits, tracker, tray, url())
+    monitor.start()
+    log.info("Pulse started on %s (browser URLs: %s)", url(), "on" if HAVE_UIA else "title-only")
+    print(f"Pulse is tracking. Dashboard: {url()}  (Ctrl+C to stop)")
+    try:
+        httpd.serve_forever(poll_interval=0.5)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        tracker.stop()
+        monitor.stop()
+        tray.stop()
+        tracker.join(timeout=5)
+        log.info("Pulse stopped")
+    _ = mutex
+
+
+if __name__ == "__main__":
+    arg = sys.argv[1] if len(sys.argv) > 1 else ""
+    {"--install": install, "--uninstall": uninstall, "--stop": stop, "--open": open_dashboard}.get(arg, run)()
