@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pulse</title>
+<style>
+/* Layout: sticky status bar → six stat tiles → day chart (timeline strip over hourly bars) → categories | websites → apps.
+   Colors: one fixed hue per category, validated colorblind-safe order; neutrals are warm greys. */
+:root{
+  color-scheme:light;
+  --page:#f4f4f1; --surface:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e; --muted:#7d7b75;
+  --grid:#e6e5df; --axis:#c3c2b7; --track:#ecebe6; --ring:rgba(11,11,11,.09); --hover:rgba(11,11,11,.035);
+  --accent:#2a78d6; --up:#a4402a; --down:#006300; --tip:#1d1d1c; --tip-ink:#f0efec;
+  --c-coding:#2a78d6; --c-entertainment:#eb6834; --c-study:#1baf7a; --c-social:#eda100;
+  --c-communication:#e87ba4; --c-productivity:#008300; --c-ai:#6250d6; --c-other:#b9b7ae;
+  --st-good:#0ca30c; --st-warn:#fab219; --st-crit:#d03b3b;
+  --sans:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
+  --display:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --r:14px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  color-scheme:dark;
+  --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink-2:#c3c2b7; --muted:#8f8d86;
+  --grid:#2c2c2a; --axis:#3d3d3a; --track:#262624; --ring:rgba(255,255,255,.09); --hover:rgba(255,255,255,.04);
+  --accent:#3987e5; --up:#ec835a; --down:#0ca30c; --tip:#f0efec; --tip-ink:#111;
+  --c-coding:#3987e5; --c-entertainment:#d95926; --c-study:#199e70; --c-social:#c98500;
+  --c-communication:#d55181; --c-productivity:#0ca30c; --c-ai:#9085e9; --c-other:#5f5e59;
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink-2:#c3c2b7; --muted:#8f8d86;
+  --grid:#2c2c2a; --axis:#3d3d3a; --track:#262624; --ring:rgba(255,255,255,.09); --hover:rgba(255,255,255,.04);
+  --accent:#3987e5; --up:#ec835a; --down:#0ca30c; --tip:#f0efec; --tip-ink:#111;
+  --c-coding:#3987e5; --c-entertainment:#d95926; --c-study:#199e70; --c-social:#c98500;
+  --c-communication:#d55181; --c-productivity:#0ca30c; --c-ai:#9085e9; --c-other:#5f5e59;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--page);color:var(--ink);font:14px/1.45 var(--sans);-webkit-font-smoothing:antialiased}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+[hidden]{display:none!important}
+
+/* ---- status bar ---- */
+.top{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--page) 86%,transparent);
+  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border-bottom:1px solid var(--ring)}
+.top-in{max-width:1180px;margin:0 auto;padding:12px max(16px,env(safe-area-inset-right,0px)) 12px max(16px,env(safe-area-inset-left,0px));
+  display:flex;align-items:center;gap:12px 20px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font:700 18px/1 var(--display);letter-spacing:-.01em}
+.beat{width:10px;height:10px;border-radius:50%;background:var(--muted);position:relative;flex:none}
+.beat.on{background:var(--c-study)}
+.beat.on::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--c-study);animation:beat 1.6s ease-out infinite}
+@keyframes beat{0%{transform:scale(1);opacity:.55}100%{transform:scale(2.8);opacity:0}}
+.now{flex:1 1 280px;min-width:0;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.now b{color:var(--ink);font-weight:600}
+.controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.seg{display:flex;background:var(--track);border-radius:10px;padding:3px}
+.seg button{border:0;background:transparent;padding:6px 14px;border-radius:8px;cursor:pointer;color:var(--ink-2);font-weight:600}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px var(--ring)}
+.datenav{display:flex;align-items:center;gap:2px}
+.icon-btn{width:32px;height:32px;border:0;border-radius:8px;background:transparent;cursor:pointer;font-size:18px;line-height:1;color:var(--ink-2)}
+.icon-btn:hover:not(:disabled){background:var(--hover);color:var(--ink)}
+.icon-btn:disabled{opacity:.3;cursor:default}
+.datepick{position:relative;padding:6px 10px;border-radius:8px;font-weight:600;min-width:130px;text-align:center;cursor:pointer}
+.datepick:hover{background:var(--hover)}
+.datepick input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.ghost{border:1px solid var(--ring);background:var(--surface);border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:600;color:var(--ink-2)}
+.ghost:hover{color:var(--ink)}
+.ghost[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:transparent}
+
+/* ---- page ---- */
+main{max-width:1180px;margin:0 auto;padding-block:20px 40px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;gap:16px}
+.offline{background:var(--surface);border:1px solid var(--ring);border-radius:var(--r);padding:14px 18px;color:var(--ink-2)}
+.offline b{color:var(--ink)}
+.offline code{font:12px ui-monospace,Consolas,monospace;background:var(--track);padding:2px 6px;border-radius:5px}
+
+.tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
+.tile{background:var(--surface);border:1px solid var(--ring);border-radius:var(--r);padding:14px 16px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.tile .k{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.tile .v{font:600 26px/1.15 var(--display);letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .s{font-size:12.5px;color:var(--ink-2);min-height:1.45em}
+.tile .s .up{color:var(--up);font-weight:600}
+.tile .s .down{color:var(--down);font-weight:600}
+@media (max-width:980px){.tiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:560px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.card{background:var(--surface);border:1px solid var(--ring);border-radius:var(--r);padding:16px 18px 18px;min-width:0}
+.card-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.card h2{margin:0;font:600 15px/1.3 var(--display);letter-spacing:-.005em;text-wrap:balance}
+.card .hint{font-size:12.5px;color:var(--muted)}
+.chart{position:relative;width:100%;overflow:hidden}
+.chart svg{display:block;max-width:100%}
+.chart text{font:11px var(--sans);fill:var(--muted)}
+.chart .lbl-strong{fill:var(--ink-2);font-weight:600}
+.empty{padding:28px 8px;text-align:center;color:var(--muted)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:12px;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:3px;flex:none;display:inline-block}
+
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.55fr);gap:16px}
+@media (max-width:900px){.grid2{grid-template-columns:minmax(0,1fr)}}
+
+/* categories */
+.stack{display:flex;gap:2px;height:14px;border-radius:5px;overflow:hidden;background:var(--track)}
+.stack i{display:block;height:100%;min-width:2px}
+.catlist{display:flex;flex-direction:column;margin-top:14px}
+.catrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto 64px;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--grid);font-variant-numeric:tabular-nums}
+.catrow:first-child{border-top:0}
+.catrow .n{font-weight:600}
+.catrow .tag{font-size:11px;color:var(--muted);margin-left:6px;font-weight:400}
+.catrow .p{color:var(--muted);font-size:12.5px}
+.catrow .t{text-align:right;font-weight:600}
+.split{display:flex;gap:10px;margin-top:14px}
+.split div{flex:1;background:var(--track);border-radius:10px;padding:10px 12px}
+.split .k{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.split .v{font:600 18px/1.3 var(--display)}
+
+/* rows (apps, sites) */
+.rows{display:flex;flex-direction:column}
+.row{border-top:1px solid var(--grid)}
+.row:first-child{border-top:0}
+.row-h{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) 76px 132px;align-items:center;gap:12px;padding:8px 0}
+.namebtn{display:flex;align-items:center;gap:10px;min-width:0;border:0;background:transparent;padding:4px 6px;margin-left:-6px;border-radius:8px;cursor:pointer;text-align:left}
+.namebtn:hover{background:var(--hover)}
+.chev{flex:none;width:14px;color:var(--muted);transition:transform .15s;font-size:13px}
+.namebtn[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.nm{display:flex;flex-direction:column;min-width:0}
+.nm .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nm .s{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar{display:flex;gap:2px;height:8px;border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;min-width:2px}
+.time{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+.catsel{width:100%;border:1px solid var(--ring);background:var(--surface);border-radius:8px;padding:5px 8px;font-size:12.5px;cursor:pointer}
+.chip{font-size:12px;color:var(--muted);text-align:center}
+.detail{padding:2px 0 12px 30px;display:flex;flex-direction:column;gap:2px}
+.drow{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) 76px;gap:12px;align-items:center;padding:4px 0;font-size:13px}
+.drow .dn{display:flex;align-items:center;gap:8px;min-width:0}
+.drow .dn span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.drow .time{font-weight:500;color:var(--ink-2)}
+.pages{grid-column:1/-1;padding:0 0 4px 18px;display:flex;flex-direction:column;gap:1px}
+.pages div{display:flex;justify-content:space-between;gap:12px;font-size:12px;color:var(--muted)}
+.pages div span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.pages div span:last-child{font-variant-numeric:tabular-nums;flex:none}
+.more{margin-top:8px;align-self:flex-start}
+@media (max-width:640px){
+  .row-h{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"n t" "b s"}
+  .row-h .namebtn{grid-area:n}.row-h .time{grid-area:t}.row-h .bar{grid-area:b}.row-h .catsel,.row-h .chip{grid-area:s;width:120px}
+  .detail{padding-left:12px}
+  .drow{grid-template-columns:minmax(0,1fr) 64px}.drow .bar{display:none}
+}
+
+/* tooltip */
+.tip{position:fixed;left:0;top:0;z-index:20;pointer-events:none;background:var(--tip);color:var(--tip-ink);border-radius:10px;
+  padding:9px 11px;font-size:12.5px;line-height:1.45;max-width:300px;box-shadow:0 8px 28px rgba(0,0,0,.25)}
+.tip .h{font-weight:700;margin-bottom:3px}
+.tip .l{display:flex;align-items:center;gap:7px;justify-content:space-between}
+.tip .l span:first-child{display:flex;align-items:center;gap:7px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tip .l span:last-child{font-variant-numeric:tabular-nums;font-weight:600}
+.tip .m{opacity:.7;font-size:12px;margin-top:3px}
+footer{color:var(--muted);font-size:12px;text-align:center;padding-top:8px}
+footer a{color:var(--accent)}
+
+/* limits */
+.limrow{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.4fr) 96px minmax(0,130px) 32px;align-items:center;gap:12px;
+  padding:9px 0;border-top:1px solid var(--grid);font-variant-numeric:tabular-nums}
+.limrow:first-child{border-top:0}
+.limrow .ln{display:flex;flex-direction:column;min-width:0}
+.limrow .ln .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.limrow .ln .s{font-size:12px;color:var(--muted)}
+.track{height:10px;background:var(--track);border-radius:5px;overflow:hidden}
+.track i{display:block;height:100%;border-radius:5px;background:var(--accent)}
+.limrow .u{text-align:right;color:var(--ink-2)}
+.state{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:12.5px;white-space:nowrap}
+.state b{width:16px;height:16px;border-radius:50%;display:inline-grid;place-items:center;font-size:10px;color:#fff;flex:none}
+.st-ok b,.st-progress b{background:var(--accent)}
+.st-near b{background:var(--st-warn);color:#0b0b0b}
+.st-over b{background:var(--st-crit)}
+.st-done b{background:var(--st-good)}
+.st-near .track i,.track.st-near i{background:var(--st-warn)}
+.track.st-over i{background:var(--st-crit)}
+.track.st-done i{background:var(--st-good)}
+.x{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer;font-size:16px}
+.x:hover{background:var(--hover);color:var(--ink)}
+.limit-form{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--grid)}
+.limit-form select,.limit-form input{border:1px solid var(--ring);background:var(--surface);border-radius:8px;padding:7px 10px;font-size:13px;min-width:0}
+.limit-form #lf-key{flex:1 1 200px;max-width:320px}
+.mins{display:inline-flex;align-items:center;gap:6px;color:var(--ink-2);font-size:13px}
+.mins input{width:80px}
+.primary{border:0;border-radius:8px;padding:8px 16px;background:var(--ink);color:var(--surface);font-weight:600;cursor:pointer}
+.primary:hover{opacity:.88}
+.form-msg{font-size:12.5px;color:var(--muted)}
+@media (max-width:640px){
+  .limrow{grid-template-columns:minmax(0,1fr) auto 32px;grid-template-areas:"n st x" "bar bar u"}
+  .limrow .ln{grid-area:n}.limrow .track{grid-area:bar}.limrow .u{grid-area:u}.limrow .state{grid-area:st}.limrow .x{grid-area:x}
+}
+
+/* weekly report */
+.insights{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 28px}
+@media (max-width:760px){.insights{grid-template-columns:minmax(0,1fr)}}
+.ins{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:start;padding:8px 0}
+.ins .mk{margin-top:3px;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:999px;white-space:nowrap}
+.mk.good{background:color-mix(in srgb,var(--st-good) 16%,transparent);color:var(--down)}
+.mk.bad{background:color-mix(in srgb,var(--st-crit) 14%,transparent);color:var(--up)}
+.mk.neutral{background:var(--track);color:var(--ink-2)}
+.ins .t{font-weight:600}
+.ins .x2{color:var(--ink-2);font-size:13.5px;max-width:60ch}
+.cmp{width:100%;border-collapse:collapse;margin-top:16px;font-variant-numeric:tabular-nums;font-size:13px}
+.cmp th{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);text-align:right;padding:6px 8px;border-bottom:1px solid var(--axis)}
+.cmp th:first-child,.cmp td:first-child{text-align:left;padding-left:0}
+.cmp td{padding:7px 8px;border-bottom:1px solid var(--grid);text-align:right}
+.cmp td:first-child span{display:inline-flex;align-items:center;gap:8px;font-weight:600}
+.cmp .good{color:var(--down);font-weight:600}
+.cmp .bad{color:var(--up);font-weight:600}
+.cmp-wrap{overflow-x:auto}
+@media (prefers-reduced-motion:reduce){.beat.on::after{animation:none}.chev{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><span class="beat" id="beat"></span>Pulse</div>
+    <div class="now" id="now">Connecting…</div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Range">
+        <button id="v-day" aria-pressed="true">Day</button>
+        <button id="v-week" aria-pressed="false">Week</button>
+      </div>
+      <div class="datenav">
+        <button class="icon-btn" id="prev" aria-label="Previous">‹</button>
+        <label class="datepick"><span id="dateLabel">Today</span><input type="date" id="dateInput" aria-label="Pick a date"></label>
+        <button class="icon-btn" id="next" aria-label="Next">›</button>
+      </div>
+      <button class="ghost" id="pause" aria-pressed="false" title="Stop recording until you resume">Pause</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="offline" id="offline" hidden>
+    <b>Pulse isn't running.</b> Start it by double-clicking <code>Start Pulse.bat</code> in the pulse folder, then this page reconnects by itself.
+  </div>
+
+  <section class="tiles" id="tiles" aria-label="Summary"></section>
+
+  <section class="card" id="dayCard">
+    <div class="card-h"><h2>Your day, hour by hour</h2><span class="hint">Top strip: what you were doing. Bars: minutes per hour. Hover for detail.</span></div>
+    <div class="chart" id="dayChart"></div>
+    <div class="legend" id="dayLegend"></div>
+  </section>
+
+  <section class="card" id="weekCard" hidden>
+    <div class="card-h"><h2>Screen time by day</h2><span class="hint">Click a day to open it.</span></div>
+    <div class="chart" id="weekChart"></div>
+    <div class="legend" id="weekLegend"></div>
+  </section>
+
+  <section class="card" id="insightsCard" hidden>
+    <div class="card-h"><h2>Weekly report</h2><span class="hint" id="insightsRange"></span></div>
+    <div class="insights" id="insights"></div>
+    <div id="catCompare"></div>
+  </section>
+
+  <section class="card" id="limitsCard">
+    <div class="card-h"><h2>Today's limits and focus goal</h2><span class="hint">You get a Windows notification 5 minutes before a limit, when you hit it, and every 15 minutes you stay past it.</span></div>
+    <div id="limits"></div>
+    <form class="limit-form" id="limitForm" autocomplete="off">
+      <select id="lf-kind" aria-label="What kind of limit">
+        <option value="site">Website</option>
+        <option value="app">App</option>
+        <option value="category">Category</option>
+        <option value="goal">Daily focus goal</option>
+      </select>
+      <select id="lf-key" aria-label="Which one"></select>
+      <label class="mins"><input id="lf-min" type="number" min="5" max="1440" step="5" value="60" aria-label="Minutes per day"><span>min a day</span></label>
+      <button class="primary" type="submit" id="lf-go">Add limit</button>
+      <button class="ghost" type="button" id="testNotify">Send a test notification</button>
+      <span class="form-msg" id="lf-msg" role="status"></span>
+    </form>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <div class="card-h"><h2>Where the time went</h2></div>
+      <div id="cats"></div>
+    </section>
+    <section class="card">
+      <div class="card-h"><h2>Websites</h2><span class="hint">Across Chrome, Edge, Brave and other browsers</span></div>
+      <div id="sites"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <div class="card-h"><h2>Apps</h2><span class="hint">Open an app to see its projects, sites or windows. Change a category and your whole history updates.</span></div>
+    <div id="apps"></div>
+  </section>
+
+  <footer>Everything stays on this laptop, in <code>pulse/data/pulse.db</code> · <a id="export" href="/api/export.csv">Download this day as CSV</a></footer>
+</main>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+(() => {
+  const CATS = ["Coding","Entertainment","Study","Social","Communication","Productivity","AI","Other"];
+  const PRODUCTIVE = new Set(["Coding","Study","Productivity","AI"]);
+  const DISTRACTING = new Set(["Entertainment","Social"]);
+  const col = c => `var(--c-${String(c).toLowerCase()})`;
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+  const pad = n => String(n).padStart(2, "0");
+  const toIso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const fromIso = s => { const [y,m,d] = s.split("-").map(Number); return new Date(y, m-1, d); };
+  const addDays = (iso, n) => { const d = fromIso(iso); d.setDate(d.getDate()+n); return toIso(d); };
+  const clock = t => new Date(t*1000).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+
+  function fmt(s){
+    s = Math.round(s || 0);
+    if (s < 60) return s + "s";
+    const m = Math.round(s/60);
+    if (m < 60) return m + "m";
+    const h = Math.floor(m/60), r = m % 60;
+    return r ? `${h}h ${r}m` : `${h}h`;
+  }
+
+  const S = { view:"day", date: toIso(new Date()), today: toIso(new Date()), data:null, open:new Set(), allApps:false, allSites:false };
+
+  /* ---------- tooltip ---------- */
+  const tip = $("tip");
+  function moveTip(e){
+    const p = 14, r = tip.getBoundingClientRect();
+    let x = e.clientX + p, y = e.clientY + p;
+    if (x + r.width > innerWidth - 8) x = e.clientX - r.width - p;
+    if (y + r.height > innerHeight - 8) y = e.clientY - r.height - p;
+    tip.style.transform = `translate(${Math.max(8,x)}px,${Math.max(8,y)}px)`;
+  }
+  function hover(node, html){
+    node.addEventListener("pointerenter", e => { tip.innerHTML = html(); tip.hidden = false; moveTip(e); });
+    node.addEventListener("pointermove", moveTip);
+    node.addEventListener("pointerleave", () => { tip.hidden = true; });
+  }
+  const tipLine = (c, label, secs) =>
+    `<div class="l"><span><i class="sw" style="background:${col(c)}"></i>${esc(label)}</span><span>${fmt(secs)}</span></div>`;
+
+  /* ---------- svg ---------- */
+  const NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs, parent){
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+  function topRounded(x, y, w, h, r){
+    r = Math.min(r, w/2, h);
+    return `M${x},${y+h}V${y+r}Q${x},${y} ${x+r},${y}H${x+w-r}Q${x+w},${y} ${x+w},${y+r}V${y+h}Z`;
+  }
+  // stacked column: segments in fixed category order, 2px surface gap, rounded data-end
+  function stackColumn(g, x, w, base, cats, pxPerSec, fill){
+    const present = CATS.filter(c => (cats[c] || 0) > 0);
+    let cum = 0;
+    present.forEach((c, j) => {
+      const hp = cats[c] * pxPerSec, top = j === present.length - 1;
+      const hh = top ? hp : Math.max(hp - 2, 0.75);
+      const y = base - cum - hp + (hp - hh);
+      if (top) el("path", { d: topRounded(x, y, w, hh, 4), fill: fill || col(c) }, g);
+      else el("rect", { x, y, width: w, height: hh, fill: col(c) }, g);
+      cum += hp;
+    });
+  }
+
+  function legend(node, cats){
+    const used = CATS.filter(c => (cats[c] || 0) > 0);
+    node.innerHTML = used.map(c => `<span><i class="sw" style="background:${col(c)}"></i>${c}</span>`).join("");
+  }
+
+  /* ---------- day chart ---------- */
+  function drawDay(d){
+    const box = $("dayChart");
+    box.innerHTML = "";
+    if (!d.total){
+      box.innerHTML = `<div class="empty">${S.date === S.today ? "Nothing recorded yet today. Keep Pulse running and this fills in as you work." : "Nothing was recorded on this day."}</div>`;
+      $("dayLegend").innerHTML = "";
+      return;
+    }
+    const W = box.clientWidth, narrow = W < 560;
+    const L = 34, R = 6, stripH = 26, gap = 22, barsH = narrow ? 120 : 150, B = 22;
+    const H = stripH + gap + barsH + B, pw = W - L - R;
+    const svg = el("svg", { viewBox:`0 0 ${W} ${H}`, width:W, height:H, role:"img",
+      "aria-label": `Activity across the day: ${fmt(d.total)} of screen time` }, box);
+    const xOf = t => L + (t - d.start) / 86400 * pw;
+
+    // timeline strip
+    el("rect", { x:L, y:0, width:pw, height:stripH, rx:5, fill:"var(--track)" }, svg);
+    const segs = el("g", {}, svg), hits = el("g", {}, svg);
+    d.timeline.forEach(s => {
+      const x = xOf(s.t0), w = Math.max(1.5, xOf(s.t1) - x);
+      el("rect", { x, y:0, width:w, height:stripH, fill:col(s.cat) }, segs);
+      const hw = Math.max(w, 8);
+      const hit = el("rect", { x: x - (hw - w)/2, y:0, width:hw, height:stripH, fill:"transparent" }, hits);
+      hover(hit, () => `<div class="h">${clock(s.t0)} – ${clock(s.t1)} · ${fmt(s.t1 - s.t0)}</div>
+        <div class="l"><span><i class="sw" style="background:${col(s.cat)}"></i>${s.cat}</span><span></span></div>
+        ${s.top.map(a => `<div class="m">${esc(a.name)} · ${fmt(a.secs)}</div>`).join("")}`);
+    });
+    if (S.date === S.today){
+      const nx = xOf(Date.now()/1000);
+      el("line", { x1:nx, x2:nx, y1:-2, y2:stripH + 4, stroke:"var(--ink)", "stroke-width":1.5 }, svg);
+      el("text", { x:Math.min(nx, L + pw - 12), y:stripH + 15, "text-anchor":"middle", class:"lbl-strong" }, svg).textContent = "now";
+    }
+
+    // hourly bars
+    const y0 = stripH + gap, base = y0 + barsH;
+    [0, 30, 60].forEach(v => {
+      const y = base - v/60 * barsH;
+      el("line", { x1:L, x2:L+pw, y1:y, y2:y, stroke: v ? "var(--grid)" : "var(--axis)", "stroke-width":1 }, svg);
+      el("text", { x:L-6, y:y+4, "text-anchor":"end" }, svg).textContent = v ? v + "m" : "0";
+    });
+    const cw = pw / 24, bw = Math.max(3, Math.min(cw * 0.64, 26));
+    const bars = el("g", {}, svg), bhits = el("g", {}, svg);
+    d.hourly.forEach((h, i) => {
+      const x = L + i*cw + (cw - bw)/2;
+      stackColumn(bars, x, bw, base, h.cats, barsH/3600);
+      const step = narrow ? 6 : 3;
+      if (i % step === 0){
+        const hr = i % 12 === 0 ? 12 : i % 12;
+        el("text", { x: L + i*cw + cw/2, y: base + 15, "text-anchor":"middle" }, svg).textContent = hr + (i < 12 ? "a" : "p");
+      }
+      const total = Object.values(h.cats).reduce((a,b) => a+b, 0);
+      if (!total) return;
+      const hit = el("rect", { x: L + i*cw, y: y0 - 6, width: cw, height: barsH + 6, fill:"transparent" }, bhits);
+      const lbl = hh => { const x = hh % 12 === 0 ? 12 : hh % 12; return `${x} ${hh < 12 || hh === 24 ? "AM" : "PM"}`; };
+      hover(hit, () => `<div class="h">${lbl(i)} – ${lbl(i+1)} · ${fmt(total)}</div>
+        ${CATS.filter(c => h.cats[c]).map(c => tipLine(c, c, h.cats[c])).join("")}
+        ${h.apps.length ? `<div class="m">Mostly ${h.apps.map(a => esc(a.name)).join(", ")}</div>` : ""}`);
+    });
+    legend($("dayLegend"), d.categories);
+  }
+
+  /* ---------- week chart ---------- */
+  function drawWeek(d){
+    const box = $("weekChart");
+    box.innerHTML = "";
+    if (!d.total){ box.innerHTML = `<div class="empty">Nothing recorded in these seven days.</div>`; $("weekLegend").innerHTML = ""; return; }
+    const W = box.clientWidth, L = 40, R = 6, T = 10, B = 40, ph = 190, H = T + ph + B, pw = W - L - R;
+    const svg = el("svg", { viewBox:`0 0 ${W} ${H}`, width:W, height:H, role:"img", "aria-label":"Screen time for each of the last seven days" }, box);
+    const maxH = Math.max(...d.days.map(x => x.total)) / 3600;
+    const step = [0.5, 1, 2, 3, 4, 6, 8].find(s => maxH / s <= 4) || 4;
+    const top = Math.max(step, Math.ceil(maxH / step) * step);
+    const base = T + ph;
+    for (let v = 0; v <= top + 1e-9; v += step){
+      const y = base - v / top * ph;
+      el("line", { x1:L, x2:L+pw, y1:y, y2:y, stroke: v ? "var(--grid)" : "var(--axis)" }, svg);
+      el("text", { x:L-6, y:y+4, "text-anchor":"end" }, svg).textContent = v ? (v % 1 ? v.toFixed(1) : v) + "h" : "0";
+    }
+    const cw = pw / 7, bw = Math.min(cw * 0.52, 56);
+    d.days.forEach((day, i) => {
+      const x = L + i*cw + (cw - bw)/2, dt = fromIso(day.date);
+      const g = el("g", {}, svg);
+      stackColumn(g, x, bw, base, day.cats, ph / (top * 3600));
+      const isToday = day.date === S.today;
+      el("text", { x: x + bw/2, y: base + 16, "text-anchor":"middle", class: isToday ? "lbl-strong" : "" }, svg)
+        .textContent = dt.toLocaleDateString([], { weekday:"short" }) + " " + dt.getDate();
+      el("text", { x: x + bw/2, y: base + 31, "text-anchor":"middle" }, svg).textContent = day.total ? fmt(day.total) : "–";
+      const hit = el("rect", { x: L + i*cw, y: T, width: cw, height: ph + B, fill:"transparent", style:"cursor:pointer" }, svg);
+      hover(hit, () => `<div class="h">${dt.toLocaleDateString([], {weekday:"long", day:"numeric", month:"short"})} · ${fmt(day.total)}</div>
+        ${CATS.filter(c => day.cats[c]).map(c => tipLine(c, c, day.cats[c])).join("")}<div class="m">Click to open this day</div>`);
+      hit.addEventListener("click", () => { tip.hidden = true; setView("day", day.date); });
+    });
+    legend($("weekLegend"), d.categories);
+  }
+
+  /* ---------- tiles ---------- */
+  function tiles(d){
+    const pct = d.total ? Math.round(d.focus / d.total * 100) : 0;
+    const diff = d.total - d.compare.secs;
+    const cmp = d.compare.secs || d.total
+      ? (Math.abs(diff) < 60 ? `Same as ${d.compare.label.replace(/^vs /, "")}`
+        : `<span class="${diff > 0 ? "up" : "down"}">${diff > 0 ? "▲" : "▼"} ${fmt(Math.abs(diff))}</span> ${esc(d.compare.label)}`)
+      : "&nbsp;";
+    const distract = [...d.sites, ...d.apps.filter(a => !a.browser)]
+      .filter(x => DISTRACTING.has(x.cat)).sort((a, b) => b.secs - a.secs)[0];
+    const activeHrs = d.total / 3600;
+    const T = [
+      ["Screen time", fmt(d.total), cmp],
+      ["Focus", fmt(d.focus), d.total ? `${pct}% of screen time` : "Coding, study, AI, productivity"],
+      ["Distraction", fmt(d.distraction), distract ? `Mostly ${esc(distract.name)}` : "Entertainment + social"],
+      ["Longest focus", fmt(d.longest_focus), "Unbroken coding or study"],
+      ["App switches", d.switches.toLocaleString(), activeHrs >= 0.25 ? `About ${Math.round(d.switches / activeHrs)} an hour` : "Times you changed apps"],
+      d.view === "day"
+        ? ["Active", d.first ? `${clock(d.first)} – ${clock(d.last)}` : "–", "First to last activity"]
+        : ["Daily average", fmt(d.daily_avg), `${d.days.filter(x => x.total).length} active days`],
+    ];
+    $("tiles").innerHTML = T.map(([k, v, s]) =>
+      `<div class="tile"><div class="k">${k}</div><div class="v" title="${esc(v)}">${esc(v)}</div><div class="s">${s}</div></div>`).join("");
+  }
+
+  /* ---------- categories ---------- */
+  function categories(d){
+    const used = CATS.filter(c => d.categories[c] > 0);
+    if (!d.total){ $("cats").innerHTML = `<div class="empty">No activity yet.</div>`; return; }
+    $("cats").innerHTML = `
+      <div class="stack" role="img" aria-label="Share of time by category">
+        ${used.map(c => `<i style="flex:${d.categories[c]};background:${col(c)}"></i>`).join("")}
+      </div>
+      <div class="split">
+        <div><div class="k">Focus</div><div class="v">${fmt(d.focus)}</div></div>
+        <div><div class="k">Distraction</div><div class="v">${fmt(d.distraction)}</div></div>
+      </div>
+      <div class="catlist">
+        ${used.sort((a, b) => d.categories[b] - d.categories[a]).map(c => `
+          <div class="catrow">
+            <i class="sw" style="background:${col(c)}"></i>
+            <span class="n">${c}${PRODUCTIVE.has(c) ? '<span class="tag">focus</span>' : DISTRACTING.has(c) ? '<span class="tag">distraction</span>' : ""}</span>
+            <span class="p">${Math.round(d.categories[c] / d.total * 100)}%</span>
+            <span class="t">${fmt(d.categories[c])}</span>
+          </div>`).join("")}
+      </div>`;
+    const stack = $("cats").querySelector(".stack");
+    [...stack.children].forEach((node, i) => hover(node, () => tipLine(used[i], used[i], d.categories[used[i]])));
+  }
+
+  /* ---------- rows ---------- */
+  function catSelect(kind, key, current, label){
+    const opts = CATS.map(c => `<option value="${c}"${c === current ? " selected" : ""}>${c}</option>`).join("");
+    return `<select class="catsel" data-kind="${kind}" data-key="${esc(key)}" aria-label="Category for ${esc(label)}">${opts}<option value="">↺ Reset to default</option></select>`;
+  }
+  function barFrom(cats, secs, max){
+    const used = CATS.filter(c => cats[c] > 0);
+    const w = Math.max(2, secs / max * 100);
+    return `<span class="bar" style="width:${w}%">${used.map(c => `<i style="flex:${cats[c]};background:${col(c)}"></i>`).join("")}</span>`;
+  }
+  function pagesList(pages){
+    return pages.length ? `<div class="pages">${pages.map(p => `<div><span>${esc(p.name)}</span><span>${fmt(p.secs)}</span></div>`).join("")}</div>` : "";
+  }
+
+  function sites(d){
+    const box = $("sites");
+    if (!d.sites.length){ box.innerHTML = `<div class="empty">No browsing recorded${d.total ? " in this range" : " yet"}.</div>`; return; }
+    const list = S.allSites ? d.sites : d.sites.slice(0, 10), max = d.sites[0].secs;
+    box.innerHTML = `<div class="rows">${list.map(s => {
+      const k = "site:" + (s.key || "");
+      const open = S.open.has(k);
+      const via = s.browsers.map(b => `${esc(b.name)} ${fmt(b.secs)}`).join(" · ");
+      return `<div class="row">
+        <div class="row-h">
+          <button class="namebtn" data-open="${esc(k)}" aria-expanded="${open}"><span class="chev">›</span>
+            <span class="nm"><span class="t">${esc(s.name)}</span><span class="s">${via}</span></span></button>
+          ${barFrom(s.cats || {[s.cat]: s.secs}, s.secs, max)}
+          <span class="time">${fmt(s.secs)}</span>
+          ${s.key ? catSelect("sites", s.key, s.cat, s.name) : `<span class="chip">${s.cat}</span>`}
+        </div>
+        <div class="detail"${open ? "" : " hidden"}>${s.pages.length ? pagesList(s.pages) : `<div class="pages"><div><span>No page titles</span></div></div>`}</div>
+      </div>`;
+    }).join("")}</div>
+    ${d.sites.length > 10 ? `<button class="ghost more" data-more="sites">${S.allSites ? "Show fewer" : `Show all ${d.sites.length} sites`}</button>` : ""}`;
+  }
+
+  function apps(d){
+    const box = $("apps");
+    if (!d.apps.length){ box.innerHTML = `<div class="empty">No apps recorded${d.total ? " in this range" : " yet"}.</div>`; return; }
+    const list = S.allApps ? d.apps : d.apps.slice(0, 12), max = d.apps[0].secs;
+    box.innerHTML = `<div class="rows">${list.map(a => {
+      const k = "app:" + a.exe;
+      const open = S.open.has(k);
+      const n = a.details.length;
+      const sub = a.browser ? `Browser · ${n} site${n === 1 ? "" : "s"}`
+        : a.details.length > 1 || (a.details[0] && a.details[0].name !== a.name) ? `${a.cat} · ${n} ${n === 1 ? "item" : "items"}` : a.cat;
+      const dmax = a.details[0] ? a.details[0].secs : 1;
+      return `<div class="row">
+        <div class="row-h">
+          <button class="namebtn" data-open="${esc(k)}" aria-expanded="${open}"><span class="chev">›</span>
+            <span class="nm"><span class="t">${esc(a.name)}</span><span class="s">${esc(sub)}</span></span></button>
+          ${barFrom(a.cats, a.secs, max)}
+          <span class="time">${fmt(a.secs)}</span>
+          ${a.browser ? `<span class="chip">Set per website</span>` : catSelect("apps", a.exe, a.cat, a.name)}
+        </div>
+        <div class="detail"${open ? "" : " hidden"}>
+          ${a.details.map(x => `<div class="drow">
+              <span class="dn"><i class="sw" style="background:${col(x.cat)}"></i><span title="${esc(x.name)}">${esc(x.name)}</span></span>
+              ${barFrom({[x.cat]: x.secs}, x.secs, dmax)}
+              <span class="time">${fmt(x.secs)}</span>
+              ${a.browser ? pagesList(x.pages.slice(0, 3)) : ""}
+            </div>`).join("")}
+        </div>
+      </div>`;
+    }).join("")}</div>
+    ${d.apps.length > 12 ? `<button class="ghost more" data-more="apps">${S.allApps ? "Show fewer" : `Show all ${d.apps.length} apps`}</button>` : ""}`;
+  }
+
+  document.addEventListener("click", e => {
+    const ob = e.target.closest("[data-open]");
+    if (ob){
+      const k = ob.dataset.open, open = !S.open.has(k);
+      open ? S.open.add(k) : S.open.delete(k);
+      ob.setAttribute("aria-expanded", open);
+      ob.closest(".row").querySelector(".detail").hidden = !open;
+      return;
+    }
+    const more = e.target.closest("[data-more]");
+    if (more){
+      if (more.dataset.more === "apps"){ S.allApps = !S.allApps; apps(S.data); }
+      else { S.allSites = !S.allSites; sites(S.data); }
+    }
+  });
+  document.addEventListener("change", async e => {
+    const sel = e.target.closest(".catsel");
+    if (!sel) return;
+    sel.disabled = true;
+    await post("/api/override", { kind: sel.dataset.kind, key: sel.dataset.key, category: sel.value || null });
+    load();
+  });
+
+  /* ---------- limits & goal ---------- */
+  const KIND_LABEL = { site:"Website", app:"App", category:"Category", goal:"Daily goal" };
+  const COMMON_SITES = [["youtube.com","YouTube"],["instagram.com","Instagram"],["netflix.com","Netflix"],
+    ["reddit.com","Reddit"],["x.com","X"],["web.whatsapp.com","WhatsApp Web"],["hotstar.com","JioHotstar"],["open.spotify.com","Spotify"]];
+  S.limits = [];
+
+  function renderLimits(){
+    const box = $("limits");
+    if (!S.limits.length){
+      box.innerHTML = `<div class="empty" style="padding:14px 0">No limits yet. Try a daily focus goal of 4 hours, or 1 hour of YouTube.</div>`;
+      return;
+    }
+    box.innerHTML = S.limits.map(l => {
+      const cap = l.minutes * 60, pct = Math.min(100, l.used / cap * 100);
+      const st = l.status.state;
+      const icon = { ok:"✓", progress:"…", near:"!", over:"✕", done:"✓" }[st];
+      const sub = l.kind === "goal" ? "Focus goal: Coding, Study, AI, Productivity" : KIND_LABEL[l.kind];
+      return `<div class="limrow">
+        <div class="ln"><span class="t">${esc(l.label)}</span><span class="s">${esc(sub)}</span></div>
+        <div class="track st-${st}" role="progressbar" aria-valuemin="0" aria-valuemax="${cap}" aria-valuenow="${l.used}" aria-label="${esc(l.label)}"><i style="width:${pct}%"></i></div>
+        <span class="u">${fmt(l.used)} / ${fmt(cap)}</span>
+        <span class="state st-${st}"><b aria-hidden="true">${icon}</b>${esc(l.status.text)}</span>
+        <button class="x" data-del-kind="${l.kind}" data-del-key="${esc(l.key)}" aria-label="Remove ${esc(l.label)} ${l.kind === "goal" ? "goal" : "limit"}" title="Remove">×</button>
+      </div>`;
+    }).join("");
+  }
+  async function loadLimits(){
+    try {
+      const r = await fetch("/api/limits");
+      S.limits = (await r.json()).limits || [];
+      renderLimits();
+    } catch {}
+  }
+  function fillLimitTargets(){
+    const kind = $("lf-kind").value, sel = $("lf-key"), d = S.data;
+    let opts = [];
+    if (kind === "site"){
+      const seen = new Set();
+      (d ? d.sites : []).filter(s => s.key).forEach(s => { seen.add(s.key); opts.push([s.key, `${s.name} (${fmt(s.secs)})`]); });
+      COMMON_SITES.forEach(([k, n]) => { if (!seen.has(k)) opts.push([k, n]); });
+    } else if (kind === "app"){
+      opts = (d ? d.apps : []).map(a => [a.exe, `${a.name} (${fmt(a.secs)})`]);
+      if (!opts.length) opts = [["", "Use some apps first"]];
+    } else if (kind === "category"){
+      opts = CATS.map(c => [c, c]);
+    }
+    const prev = sel.value;
+    sel.innerHTML = opts.map(([k, n]) => `<option value="${esc(k)}">${esc(n)}</option>`).join("");
+    if (opts.some(o => o[0] === prev)) sel.value = prev;
+    sel.hidden = kind === "goal";
+    $("lf-go").textContent = kind === "goal" ? "Set goal" : "Add limit";
+    if (kind === "goal" && $("lf-min").value === "60") $("lf-min").value = 240;
+  }
+  $("lf-kind").addEventListener("change", fillLimitTargets);
+  $("limitForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const kind = $("lf-kind").value, sel = $("lf-key"), minutes = Number($("lf-min").value);
+    const msg = $("lf-msg");
+    if (!(minutes >= 1)){ msg.textContent = "Enter the minutes per day, for example 60."; return; }
+    if (kind !== "goal" && !sel.value){ msg.textContent = "Pick what to limit."; return; }
+    const label = kind === "goal" ? "Focus" : sel.options[sel.selectedIndex].text.replace(/\s\([^)]*\)$/, "");
+    const r = await post("/api/limits", { kind, key: sel.value, label, minutes });
+    if (r && r.limits){ S.limits = r.limits; renderLimits(); msg.textContent = kind === "goal" ? "Goal set." : `Limit set: ${fmt(minutes * 60)} a day.`; }
+    else msg.textContent = (r && r.error) || "Couldn't save. Is Pulse running?";
+    setTimeout(() => { msg.textContent = ""; }, 4000);
+  });
+  document.addEventListener("click", async e => {
+    const del = e.target.closest("[data-del-kind]");
+    if (!del) return;
+    const r = await post("/api/limits", { kind: del.dataset.delKind, key: del.dataset.delKey, minutes: 0 });
+    if (r && r.limits){ S.limits = r.limits; renderLimits(); }
+  });
+
+  $("testNotify").addEventListener("click", async () => {
+    const r = await post("/api/test-notification", {});
+    $("lf-msg").textContent = r && r.ok
+      ? "Sent. If nothing appeared, turn off Do Not Disturb in Windows notification settings."
+      : "The tray icon isn't available, so notifications can't be shown. Restart Pulse.";
+    setTimeout(() => { $("lf-msg").textContent = ""; }, 8000);
+  });
+
+  /* ---------- weekly report ---------- */
+  function renderInsights(d){
+    const a = fromIso(addDays(d.date, -6)), b = fromIso(d.date);
+    $("insightsRange").textContent = `${a.toLocaleDateString([], {day:"numeric", month:"short"})} – ${b.toLocaleDateString([], {day:"numeric", month:"short"})}, compared with the 7 days before`;
+    const ins = d.insights || [];
+    if (!ins.length){ $("insights").innerHTML = `<div class="empty">Your weekly report appears once Pulse has recorded some activity.</div>`; $("catCompare").innerHTML = ""; return; }
+    const tag = { good:"Better", bad:"Watch", neutral:"Note" };
+    $("insights").innerHTML = ins.map(x => `<div class="ins"><span class="mk ${x.tone}">${tag[x.tone] || "Note"}</span>
+      <div><div class="t">${esc(x.title)}</div><div class="x2">${esc(x.text)}</div></div></div>`).join("");
+    const cc = d.category_compare || {};
+    const rows = CATS.filter(c => cc[c]);
+    const anyPrev = rows.some(c => cc[c].prev);
+    $("catCompare").innerHTML = rows.length ? `<div class="cmp-wrap"><table class="cmp">
+      <thead><tr><th>Category</th><th>This week</th>${anyPrev ? "<th>Week before</th><th>Change</th>" : ""}</tr></thead>
+      <tbody>${rows.map(c => {
+        const diff = cc[c].now - cc[c].prev;
+        const good = PRODUCTIVE.has(c) ? diff > 0 : DISTRACTING.has(c) ? diff < 0 : null;
+        const cls = Math.abs(diff) < 300 || good === null ? "" : good ? "good" : "bad";
+        return `<tr><td><span><i class="sw" style="background:${col(c)}"></i>${c}</span></td><td>${fmt(cc[c].now)}</td>
+          ${anyPrev ? `<td>${fmt(cc[c].prev)}</td><td class="${cls}">${Math.abs(diff) < 60 ? "–" : (diff > 0 ? "+" : "−") + fmt(Math.abs(diff))}</td>` : ""}</tr>`;
+      }).join("")}</tbody></table></div>` : "";
+  }
+
+  /* ---------- header ---------- */
+  function header(){
+    $("v-day").setAttribute("aria-pressed", S.view === "day");
+    $("v-week").setAttribute("aria-pressed", S.view === "week");
+    $("dayCard").hidden = S.view !== "day";
+    $("weekCard").hidden = S.view !== "week";
+    $("insightsCard").hidden = S.view !== "week";
+    $("export").href = `/api/export.csv?view=${S.view}&date=${S.date}`;
+    $("export").textContent = S.view === "week" ? "Download these 7 days as CSV" : "Download this day as CSV";
+    const d = fromIso(S.date);
+    let label;
+    if (S.view === "day"){
+      label = S.date === S.today ? "Today" : S.date === addDays(S.today, -1) ? "Yesterday"
+        : d.toLocaleDateString([], { weekday:"short", day:"numeric", month:"short" });
+    } else {
+      const a = fromIso(addDays(S.date, -6));
+      label = S.date === S.today ? "Last 7 days"
+        : `${a.toLocaleDateString([], {day:"numeric", month:"short"})} – ${d.toLocaleDateString([], {day:"numeric", month:"short"})}`;
+    }
+    $("dateLabel").textContent = label;
+    $("dateInput").value = S.date;
+    $("dateInput").max = S.today;
+    $("next").disabled = S.date >= S.today;
+  }
+
+  function render(){
+    const d = S.data;
+    header();
+    if (!d) return;
+    tiles(d);
+    if (d.view === "day") drawDay(d); else { drawWeek(d); renderInsights(d); }
+    categories(d);
+    sites(d);
+    apps(d);
+    fillLimitTargets();
+  }
+
+  /* ---------- data ---------- */
+  async function post(path, body){
+    try {
+      const r = await fetch(path, { method:"POST", headers:{ "Content-Type":"application/json", "X-Pulse":"1" }, body: JSON.stringify(body) });
+      return await r.json();
+    } catch { return null; }
+  }
+  let loading = 0;
+  async function load(){
+    const my = ++loading;
+    try {
+      const r = await fetch(`/api/summary?view=${S.view}&date=${S.date}`);
+      if (!r.ok) throw new Error(r.status);
+      const d = await r.json();
+      if (my !== loading) return;
+      S.data = d; S.today = d.today;
+      $("offline").hidden = true;
+      render();
+    } catch {
+      $("offline").hidden = false;
+      header();
+    }
+  }
+  async function loadNow(){
+    const now = $("now"), beat = $("beat");
+    try {
+      const r = await fetch("/api/now");
+      const s = await r.json();
+      $("offline").hidden = true;
+      $("pause").setAttribute("aria-pressed", !!s.paused);
+      $("pause").textContent = s.paused ? "Resume" : "Pause";
+      beat.classList.toggle("on", s.status === "tracking" || s.status === "asking");
+      const since = s.since ? ` · for ${fmt(s.now - s.since)}` : "";
+      if (s.status === "asking"){
+        now.textContent = "Asking if you're still there (see the card in the corner of your screen)";
+      } else if (s.status === "tracking" && s.app){
+        const what = s.browser
+          ? `<b>${esc(s.site_name)}</b> in ${esc(s.browser)}${s.page && s.page !== s.site_name ? " · " + esc(s.page) : ""}`
+          : `<b>${esc(s.app)}</b>${s.detail && s.detail !== s.app ? " · " + esc(s.detail) : ""}`;
+        now.innerHTML = `${what}${since}`;
+        now.title = now.textContent;
+      } else {
+        now.textContent = { idle:"Idle: not counting until you're back", paused:"Paused: nothing is being recorded",
+          locked:"Screen locked", away:"No window in focus", starting:"Starting…" }[s.status] || "…";
+      }
+    } catch {
+      beat.classList.remove("on");
+      now.textContent = "Not connected";
+      $("offline").hidden = false;
+    }
+  }
+
+  function setView(view, date){
+    S.view = view;
+    if (date) S.date = date;
+    if (S.date > S.today) S.date = S.today;
+    try { history.replaceState(null, "", view === "week" ? "#week" : location.pathname); } catch {}
+    header();
+    load();
+  }
+  addEventListener("hashchange", () => { const v = location.hash === "#week" ? "week" : "day"; if (v !== S.view) setView(v); });
+  if (location.hash === "#week") S.view = "week";
+  $("v-day").onclick = () => setView("day");
+  $("v-week").onclick = () => setView("week");
+  const shift = n => { const next = addDays(S.date, n * (S.view === "week" ? 7 : 1)); setView(S.view, next > S.today ? S.today : next); };
+  $("prev").onclick = () => shift(-1);
+  $("next").onclick = () => shift(1);
+  $("dateInput").addEventListener("change", e => { if (e.target.value) setView(S.view, e.target.value); });
+  $("pause").onclick = async () => {
+    const paused = $("pause").getAttribute("aria-pressed") !== "true";
+    await post("/api/pause", { paused });
+    loadNow();
+  };
+  addEventListener("keydown", e => {
+    if (e.target.closest("input,select,textarea")) return;
+    if (e.key === "ArrowLeft") shift(-1);
+    if (e.key === "ArrowRight" && S.date < S.today) shift(1);
+  });
+  let rt = 0;
+  addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => S.data && (S.data.view === "day" ? drawDay(S.data) : drawWeek(S.data)), 120); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden){ load(); loadNow(); } });
+
+  header();
+  fillLimitTargets();
+  load();
+  loadNow();
+  loadLimits();
+  setInterval(loadNow, 4000);
+  setInterval(() => { if (!document.hidden && S.date === S.today) load(); }, 30000);
+  setInterval(() => { if (!document.hidden) loadLimits(); }, 30000);
+})();
+</script>
+</body>
+</html>
