@@ -271,3 +271,26 @@ class Tracker(threading.Thread):
         return url
 
     # ---- one look at the screen ------------------------------------------
+    def snapshot(self):
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return None
+        pid = window_pid(hwnd)
+        path = process_path(pid)
+        exe = os.path.basename(path).lower() if path else "unknown"
+        if exe == "applicationframehost.exe":
+            child = uwp_child_pid(hwnd, pid)
+            if child:
+                path = process_path(child) or path
+                exe = os.path.basename(path).lower()
+        if exe == "lockapp.exe":
+            return "locked"
+        title = window_title(hwnd)
+        browser = BROWSERS.get(exe)
+        url = self.browser_url(hwnd, title) if browser else None
+        return {
+            "exe": exe, "app": friendly_name(exe, path), "title": title[:400],
+            "url": url, "host": parse_host(url), "browser": browser,
+        }
+
+    # ---- loop -------------------------------------------------------------
