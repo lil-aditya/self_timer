@@ -263,3 +263,31 @@ def summarize(events, rules=None):
         "apps": app_list,
         "sites": site_list,
     }
+
+
+def hourly(events, day_start):
+    hours = [{"cats": {}, "apps": {}} for _ in range(24)]
+    for e in events:
+        a = e["t0"]
+        while a < e["t1"]:
+            h = int((a - day_start) // 3600)
+            if not 0 <= h < 24:
+                break
+            b = min(e["t1"], day_start + (h + 1) * 3600)
+            _add(hours[h]["cats"], e["cat"], b - a)
+            _add(hours[h]["apps"], e["app"] if not e["browser"] else e["detail"], b - a)
+            a = b
+    return [{"cats": {k: round(v) for k, v in h["cats"].items()}, "apps": _top(h["apps"], 3)} for h in hours]
+
+
+def timeline(events, merge_gap=60):
+    segs = []
+    for e in events:
+        label = e["detail"] if e["browser"] else (f'{e["app"]} · {e["detail"]}' if e["detail"] != e["app"] else e["app"])
+        if segs and segs[-1]["cat"] == e["cat"] and e["t0"] - segs[-1]["t1"] <= merge_gap:
+            s = segs[-1]
+            s["t1"] = e["t1"]
+            _add(s["labels"], label, e["d"])
+        else:
+            segs.append({"t0": e["t0"], "t1": e["t1"], "cat": e["cat"], "labels": {label: e["d"]}})
+    return [{"t0": s["t0"], "t1": s["t1"], "cat": s["cat"], "top": _top(s["labels"], 3)} for s in segs]
