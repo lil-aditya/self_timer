@@ -144,3 +144,24 @@ class Rules:
             except re.error:
                 self.exempt_title = None
             self._cache = {}
+
+    # ---- settings -------------------------------------------------------
+    def get(self, key, default=None):
+        return self.cfg.get(key, default)
+
+    def set_override(self, kind, key, category):
+        if kind not in ("apps", "sites") or not key:
+            raise ValueError("kind must be 'apps' or 'sites'")
+        if category not in CATEGORIES and category is not None:
+            raise ValueError("unknown category")
+        os.makedirs(DATA, exist_ok=True)
+        o = {"apps": dict(self.overrides["apps"]), "sites": dict(self.overrides["sites"])}
+        if category is None:
+            o[kind].pop(key.lower(), None)
+        else:
+            o[kind][key.lower()] = category
+        tmp = OVERRIDES_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(o, f, indent=2)
+        os.replace(tmp, OVERRIDES_PATH)
+        self.load()
